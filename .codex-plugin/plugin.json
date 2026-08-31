@@ -1,6 +1,6 @@
 {
   "name": "spilberg-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agente local-first para selecionar, aprovar e renderizar cortes de vídeo auditáveis.",
   "author": {
     "name": "JG Campos",
