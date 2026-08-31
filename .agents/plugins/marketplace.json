@@ -8,7 +8,7 @@
       "name": "spilberg-agent",
       "source": {
         "source": "local",
-        "path": "../../"
+        "path": "./plugins/spilberg-agent"
       },
       "policy": {
         "installation": "AVAILABLE",
