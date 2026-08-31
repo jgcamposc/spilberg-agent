@@ -51,9 +51,15 @@ class SpilbergOrchestrator:
             return str(Path(env_path).resolve())
 
         suffix = ".exe" if os.name == "nt" else ""
-        active_venv_bin = Path(sys.executable).resolve().parent
+        # Do not resolve the interpreter symlink here. On macOS, a virtualenv
+        # commonly points at the system Python; resolving it would discard the
+        # virtualenv's bin directory and hide console tools such as whisper.
+        active_venv_bin = Path(sys.executable).parent
+        active_prefix = Path(sys.prefix)
         candidates = [
             active_venv_bin / f"{executable}{suffix}",
+            active_prefix / "bin" / executable,
+            active_prefix / "Scripts" / f"{executable}{suffix}",
             self.project_root / ".venv" / "bin" / executable,
             self.project_root / ".venv" / "Scripts" / f"{executable}{suffix}",
             self.project_root / "lib" / "bin" / f"{executable}{suffix}",
