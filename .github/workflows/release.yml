@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 jobs:
   release:
@@ -25,6 +27,15 @@ jobs:
           git archive --format=zip --output "dist/spilberg-agent-${GITHUB_REF_NAME}-source.zip" HEAD
           python -m pip_audit -r requirements/base.txt --format cyclonedx-json --output dist/SBOM.cdx.json
           python scripts/release_manifest.py
+      - name: Attest release provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: dist/SHA256SUMS
+      - name: Attest wheel SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: dist/spilberg_agent-*.whl
+          sbom-path: dist/SBOM.cdx.json
       - name: Publish verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
