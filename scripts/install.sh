@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Instalando Spilberg Agent..."
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .
+set -u
 
-echo "Baixando dependências externas (ffmpeg, yt-dlp, auto-editor)..."
-# No Mac, ffmpeg pode ser instalado via brew
-if command -v brew &> /dev/null; then
-    brew install ffmpeg
-else
-    echo "Aviso: brew não encontrado. Certifique-se de instalar o ffmpeg."
+if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
+  echo "Esta v1 é suportada apenas no macOS Apple Silicon. Consulte docs/installation.md."
+  exit 1
 fi
 
-echo "Instalação concluída! Rode 'spilberg doctor' para testar."
+RUNTIME_DIR="${SPILBERG_RUNTIME_DIR:-$HOME/Library/Application Support/Spilberg}"
+echo "Instalando Spilberg Agent em runtime privado: $RUNTIME_DIR"
+python3 "$(dirname "$0")/bootstrap.py" --runtime-dir "$RUNTIME_DIR"

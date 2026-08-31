@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: spilberg-public-boundary
+        name: Spilberg public repository boundary
+        entry: python scripts/check_repository.py
+        language: system
+        pass_filenames: false

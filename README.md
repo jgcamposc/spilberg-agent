@@ -1,11 +1,11 @@
 # Spilberg Agent v1.0
 
-Agent autônomo local-first para edição modular de vídeos no ecossistema BeGrow.
+Agente local-first para edição de vídeo auditável com uma etapa editorial no Codex e execução técnica local.
 
 ## Instalação
 
 ```bash
-# macOS / Linux
+# macOS Apple Silicon
 chmod +x scripts/install.sh
 ./scripts/install.sh
 
@@ -15,5 +15,6 @@ pwsh scripts/install.ps1
 
 ## Arquitetura
 
-O Spilberg Agent é local-first: orquestra FFmpeg e mantém jobs, renderização e QA na máquina do usuário. Downloads por URL e B-roll Pexels são opcionais e só ocorrem por comando ou plano explícito.
-Consulte `docs/architecture.md` para detalhes.
+O Spilberg Agent orquestra FFmpeg e mantém jobs, renderização, QA, cache e arquivos na máquina do usuário. Downloads por URL e B-roll Pexels são opcionais e só ocorrem por comando ou plano explícito. O Codex recebe um EvidencePack reduzido e devolve um JSON pendente de aprovação.
+
+Consulte `docs/installation.md` e `docs/architecture.md` para os sistemas suportados, limites funcionais e fluxo completo.

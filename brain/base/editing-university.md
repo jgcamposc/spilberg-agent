@@ -82,9 +82,10 @@ Zoom gradual e tracking dinâmico não estão validados.
 
 ## Áudio
 
-O núcleo preserva ou recodifica a faixa original em AAC. Não oferece redução
-de ruído, equalização, compressão, remoção de reverb, música, ducking ou
-loudness. Auto-Editor remove silêncios em etapa separada.
+O núcleo preserva ou recodifica a faixa original em AAC. Um plano aprovado pode
+misturar uma única música local com ducking durante a fala. Não oferece redução
+de ruído, equalização, remoção de reverb, normalização de loudness ou múltiplas
+trilhas. Auto-Editor remove silêncios em etapa separada.
 
 ## Cadeia técnica
 

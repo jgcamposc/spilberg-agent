@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spilberg Editor"
+  short_description: "Decide cortes em planos JSON auditáveis"
+  brand_color: "#E11D48"
+  default_prompt: "Use $spilberg-editor para criar um AgentPlan aprovado por humano a partir do EvidencePack."
+policy:
+  allow_implicit_invocation: false

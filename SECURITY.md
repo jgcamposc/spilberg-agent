@@ -8,4 +8,4 @@
 
 ## Reporting a Vulnerability
 
-Por favor, reporte vulnerabilidades na infraestrutura interna da BeGrow.
+Não publique detalhes de uma vulnerabilidade em issues públicas. Envie um relatório privado ao mantenedor do repositório pelo mecanismo de contato disponível no perfil [@jgcamposc](https://github.com/jgcamposc), incluindo versão, sistema operacional, passos para reproduzir e impacto. Não inclua vídeos, transcrições, chaves ou dados de clientes.

@@ -5,6 +5,7 @@ import json
 import os
 import platform as system_platform
 import shutil
+import sys
 import tempfile
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -50,7 +51,9 @@ class SpilbergOrchestrator:
             return str(Path(env_path).resolve())
 
         suffix = ".exe" if os.name == "nt" else ""
+        active_venv_bin = Path(sys.executable).resolve().parent
         candidates = [
+            active_venv_bin / f"{executable}{suffix}",
             self.project_root / ".venv" / "bin" / executable,
             self.project_root / ".venv" / "Scripts" / f"{executable}{suffix}",
             self.project_root / "lib" / "bin" / f"{executable}{suffix}",
@@ -210,21 +213,10 @@ class SpilbergOrchestrator:
         return self._require_file(json_path, "Transcrição Whisper")
 
     def generate_ai_editing_prompt(self, transcript_json_path: str) -> str:
-        data = json.loads(Path(transcript_json_path).read_text(encoding="utf-8"))
-        lines = [
-            f"[{float(segment.get('start', 0)):.2f}-{float(segment.get('end', 0)):.2f}] "
-            f"{str(segment.get('text', '')).strip()}"
-            for segment in data.get("segments", [])
-            if str(segment.get("text", "")).strip()
-        ]
-        transcript = "\n".join(lines)
-        if not transcript:
-            raise ValueError("Transcrição sem segmentos textuais")
-        return (
-            "Leia brain/prompt_mestre.md, brain/university_of_editing.md e "
-            "brain/learned_rules.md. Gere um EditPlan PENDING_APPROVAL sem "
-            "inventar falas ou timestamps.\n\nTRANSCRIÇÃO:\n"
-            + transcript
+        raise RuntimeError(
+            "Este atalho foi removido para evitar enviar uma transcrição inteira ao "
+            "editor. Use `spilberg prepare <video> --transcript <arquivo.json>` e "
+            "entregue o evidence.md ao skill $spilberg-editor."
         )
 
     def approve_plan(self, plan_path: str) -> Path:
@@ -354,22 +346,27 @@ class SpilbergOrchestrator:
         from .subtitles import generate_ass_subtitles
 
         brolls = [e for e in plan.effects if e.effect_type == EffectType.B_ROLL]
+        split_screens = [e for e in plan.effects if e.effect_type == EffectType.SPLIT_SCREEN]
+        ducking_effects = [e for e in plan.effects if e.effect_type == EffectType.AUDIO_DUCKING]
+        if len(ducking_effects) > 1:
+            raise ValueError("O plano aceita no máximo um AUDIO_DUCKING")
         valid_brolls = []
 
         for b in brolls:
             source_type = b.parameters.get("source")
+            on_failure = b.parameters.get("on_failure", "fail")
             if source_type == "pexels_api":
                 from .pexels import PexelsClient
                 import hashlib
-                import asyncio
-                
+
                 query = b.parameters.get("search_query")
                 if not query:
-                    print("Aviso: Pexels API chamada sem search_query, ignorando b-roll.")
-                    continue
-                
+                    if on_failure == "skip":
+                        print("Aviso: Pexels sem search_query; B-roll ignorado por política explícita.")
+                        continue
+                    raise ValueError("Pexels exige search_query para um B-roll obrigatório")
+
                 orientation = b.parameters.get("orientation", "landscape") if not vertical else "portrait"
-                
                 try:
                     client = PexelsClient()
                     print(f"Buscando B-Roll no Pexels para: '{query}' ({orientation})...")
@@ -382,10 +379,14 @@ class SpilbergOrchestrator:
                         b.parameters["media_path"] = str(broll_dest.absolute())
                         valid_brolls.append(b)
                     else:
-                        print(f"Aviso: Nenhum video encontrado para '{query}', ignorando b-roll.")
-                        continue
-                except Exception as e:
-                    print(f"Aviso: Falha ao usar Pexels API: {e}. Ignorando b-roll.")
+                        if on_failure == "skip":
+                            print(f"Aviso: Pexels sem resultado para '{query}'; B-roll ignorado por política explícita.")
+                            continue
+                        raise RuntimeError(f"Pexels não encontrou B-roll obrigatório para '{query}'")
+                except Exception as error:
+                    if on_failure != "skip":
+                        raise RuntimeError(f"B-roll obrigatório falhou para '{query}'") from error
+                    print(f"Aviso: Falha ao usar Pexels API: {error}. B-roll ignorado por política explícita.")
                     continue
             else:
                 valid_brolls.append(b)
@@ -409,7 +410,29 @@ class SpilbergOrchestrator:
             media_full_path = self.project_root / media_path if not Path(media_path).is_absolute() else Path(media_path)
             if not media_full_path.exists():
                 raise FileNotFoundError(f"Arquivo de B-Roll não encontrado: {media_full_path}")
-            ffmpeg_cmd.extend(["-i", str(media_full_path)])
+            local_start = self._map_time(b.start_time, segments)
+            if local_start is None:
+                local_start = 0.0
+            ffmpeg_cmd.extend(["-stream_loop", "-1", "-itsoffset", f"{local_start:.4f}", "-i", str(media_full_path)])
+
+        split_input_indices = []
+        for split in split_screens:
+            media_path = split.parameters["media_path"]
+            media_full_path = self.project_root / media_path if not Path(media_path).is_absolute() else Path(media_path)
+            if not media_full_path.is_file():
+                raise FileNotFoundError(f"Arquivo de split-screen não encontrado: {media_full_path}")
+            split_input_indices.append(1 + len(brolls) + len(split_input_indices))
+            ffmpeg_cmd.extend(["-stream_loop", "-1", "-i", str(media_full_path)])
+
+        music_input_index: int | None = None
+        ducking_effect = ducking_effects[0] if ducking_effects else None
+        if ducking_effect:
+            music_path = ducking_effect.parameters["music_path"]
+            music_full_path = self.project_root / music_path if not Path(music_path).is_absolute() else Path(music_path)
+            if not music_full_path.is_file():
+                raise FileNotFoundError(f"Trilha para ducking não encontrada: {music_full_path}")
+            music_input_index = 1 + len(brolls) + len(split_screens)
+            ffmpeg_cmd.extend(["-stream_loop", "-1", "-i", str(music_full_path)])
 
         filter_graph = []
         last_stream = "[0:v]"
@@ -462,17 +485,57 @@ class SpilbergOrchestrator:
             if local_start is None or local_end is None or local_end <= local_start:
                 continue
             input_idx = idx + 1
+            transition = b.parameters.get("transition", "cut")
+            fade_duration = 0.3
+
+            if transition == "fade" and (local_end - local_start > fade_duration * 2):
+                alpha_fade = (
+                    f",format=yuva420p,"
+                    f"fade=t=in:st={local_start:.4f}:d={fade_duration}:alpha=1,"
+                    f"fade=t=out:st={local_end-fade_duration:.4f}:d={fade_duration}:alpha=1"
+                )
+            else:
+                alpha_fade = ""
+
             broll_scale = (
                 f"[{input_idx}:v]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
-                f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black[broll{idx}]"
+                f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black"
+                f"{alpha_fade}[broll{idx}]"
             )
             filter_graph.append(broll_scale)
             overlay_filter = (
-                f"{last_stream}[broll{idx}]overlay=x=0:y=0:"
+                f"{last_stream}[broll{idx}]overlay=x=0:y=0:eof_action=pass:"
                 f"enable='between(t,{local_start:.4f},{local_end:.4f})'[v_overlaid_{idx}]"
             )
             filter_graph.append(overlay_filter)
             last_stream = f"[v_overlaid_{idx}]"
+
+        for split_index, (split, input_index) in enumerate(zip(split_screens, split_input_indices)):
+            local_start = self._map_time(split.start_time, segments)
+            local_end = self._map_time(split.end_time, segments)
+            if local_start is None or local_end is None:
+                raise ValueError("SPLIT_SCREEN precisa estar dentro dos segmentos selecionados")
+            if local_start > 0.05 or abs(local_end - plan.selected_duration) > 0.05:
+                raise ValueError("SPLIT_SCREEN v1 precisa cobrir a saída inteira")
+            layout = split.parameters.get("layout", "top_bottom")
+            if layout == "top_bottom":
+                pane_w, pane_h, stack = target_w, target_h // 2, "vstack"
+            else:
+                pane_w, pane_h, stack = target_w // 2, target_h, "hstack"
+            main_label = f"split_main_{split_index}"
+            aux_label = f"split_aux_{split_index}"
+            output_label = f"v_split_{split_index}"
+            pane_filter = (
+                f"scale={pane_w}:{pane_h}:force_original_aspect_ratio=decrease,"
+                f"pad={pane_w}:{pane_h}:(ow-iw)/2:(oh-ih)/2:color=black"
+            )
+            filter_graph.append(f"{last_stream}{pane_filter}[{main_label}]")
+            filter_graph.append(
+                f"[{input_index}:v]setpts=PTS-STARTPTS,trim=duration={plan.selected_duration:.6f},"
+                f"{pane_filter}[{aux_label}]"
+            )
+            filter_graph.append(f"[{main_label}][{aux_label}]{stack}=inputs=2[{output_label}]")
+            last_stream = f"[{output_label}]"
 
         text_effects = [
             effect
@@ -520,13 +583,26 @@ class SpilbergOrchestrator:
             filter_graph.append(sub_filter)
             last_stream = "[v_subbed]"
 
+        audio_map = ["-map", "0:a?"]
+        if ducking_effect and music_input_index is not None:
+            volume = float(ducking_effect.parameters.get("music_volume", 0.18))
+            threshold = float(ducking_effect.parameters.get("threshold", 0.03))
+            if not 0.001 <= threshold <= 0.2:
+                raise ValueError("AUDIO_DUCKING threshold deve estar entre 0.001 e 0.2")
+            filter_graph.append(
+                f"[{music_input_index}:a]atrim=duration={plan.selected_duration:.6f},"
+                f"volume={volume:.4f}[music_bed];"
+                f"[music_bed][0:a]sidechaincompress=threshold={threshold:.4f}:ratio=12:attack=20:release=300[music_ducked];"
+                f"[0:a][music_ducked]amix=inputs=2:duration=first:normalize=0[a_mixed]"
+            )
+            audio_map = ["-map", "[a_mixed]"]
+
         ffmpeg_cmd.extend([
             "-filter_complex",
             ";".join(filter_graph),
             "-map",
             last_stream,
-            "-map",
-            "0:a",
+            *audio_map,
             "-c:v",
             "libx264",
             "-crf",
@@ -591,26 +667,16 @@ class SpilbergOrchestrator:
         await self._run_command(command, "Validação de decodificação")
 
     async def analyze_video(self, video_path: str, transcript_path: str):
-        from engine.analyzer import SpilbergAnalyzer
-
-        transcript_data = json.loads(Path(transcript_path).read_text(encoding="utf-8"))
-        analyzer = SpilbergAnalyzer(brain_dir=str(self.project_root / "brain"))
-        results = []
-        for platform in ("youtube", "reels"):
-            plan = await analyzer.generate_plan(video_path, transcript_data, platform)
-            plan_path = self.plans / f"{platform}_plan_ai.json"
-            if plan_path.exists():
-                raise FileExistsError(
-                    f"Plano já existe e não será sobrescrito: {plan_path}"
-                )
-            plan.export_json(str(plan_path))
-            results.append(plan_path)
-        return tuple(results)
+        raise RuntimeError(
+            "Não há um SpilbergAnalyzer autônomo instalado. A decisão editorial é "
+            "feita pelo Codex usando o EvidencePack produzido por `spilberg prepare`."
+        )
 
     def register_feedback(self, feedback: str) -> None:
-        from engine.analyzer import SpilbergAnalyzer
-
-        SpilbergAnalyzer(str(self.project_root / "brain")).register_feedback(feedback)
+        raise RuntimeError(
+            "Feedback é associado a um job: use `spilberg feedback <job-id> "
+            "--accepted --rule <regra>`."
+        )
 
     def register_approval(
         self,
@@ -618,12 +684,9 @@ class SpilbergOrchestrator:
         output_path: str,
         feedback: str = "",
     ) -> Path:
-        from engine.analyzer import SpilbergAnalyzer
-
-        return SpilbergAnalyzer(str(self.project_root / "brain")).register_approval(
-            plan_path,
-            output_path,
-            feedback,
+        raise RuntimeError(
+            "Aprovação é imutável e associada a um job: use `spilberg approve "
+            "<job-id> --approval-text <texto>`."
         )
 
     async def render_visuals(self, video_path: str, transcript_json_path: str):
@@ -665,8 +728,9 @@ class SpilbergOrchestrator:
 
     async def generate_synthetic_video(self, script_text: str):
         raise NotImplementedError(
-            "MoneyPrinterTurbo, Chatterbox, Manim e B-roll ainda não estão "
-            "integrados. A antiga saída preta era apenas placeholder e foi bloqueada."
+            "Geração sintética com MoneyPrinterTurbo, Chatterbox ou Manim não está "
+            "integrada. B-roll existe somente como efeito dentro de um EditPlan para "
+            "uma fonte de vídeo já existente."
         )
 
     async def auto_edit_video(

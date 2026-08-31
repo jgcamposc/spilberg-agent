@@ -1,4 +1,4 @@
-# Regras Editoriais (Spilberg Agent)
+# Universidade de Edição auditada
 
 Este manual separa direção editorial de capacidade técnica. Diretrizes podem orientar um plano; só recursos presentes no engine podem ser executados.
 
@@ -72,7 +72,7 @@ Zoom gradual e tracking dinâmico não estão validados.
 
 ## Áudio
 
-O núcleo preserva ou recodifica a faixa original em AAC. Um plano aprovado pode misturar uma única trilha local com ducking durante a fala. Não oferece redução de ruído, equalização, remoção de reverb, normalização de loudness ou múltiplas trilhas. Auto-Editor remove silêncios em etapa separada.
+O núcleo preserva ou recodifica a faixa original em AAC. Um plano aprovado pode misturar uma única música local com ducking durante a fala. Não oferece redução de ruído, equalização, remoção de reverb, normalização de loudness ou múltiplas trilhas. Auto-Editor remove silêncios em etapa separada.
 
 ## Cadeia técnica
 

@@ -45,10 +45,10 @@ doctor/
 *.wav
 *.mp3
 *.srt
-render_cooper.py
-test_render.py
-test_pexels.py
-visuals/
+/render_cooper.py
+/test_render.py
+/test_pexels.py
+/visuals/
 
 # macOS
 .DS_Store
