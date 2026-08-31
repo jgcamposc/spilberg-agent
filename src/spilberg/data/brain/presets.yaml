@@ -1,0 +1,41 @@
+# Presets de estilos suportados pelo Spilberg Agent
+
+styles:
+  hormozi:
+    description: "Estilo agressivo, até 3 palavras, texto grande e centralizado. Ideal para TikTok/Reels focados em retenção imediata."
+    max_words_per_line: 3
+    alignment: "center"
+    font:
+      name: "Arial"
+      weight: "bold"
+      size: 64
+    outline:
+      size: 4
+      color: "black"
+
+  cinematic:
+    description: "Estilo elegante e discreto, até 6 palavras, alinhado no terço inferior. Ideal para mini-documentários ou conteúdo denso."
+    max_words_per_line: 6
+    alignment: "bottom-third"
+    font:
+      name: "Arial"
+      weight: "normal"
+      size: 48
+    outline:
+      size: 2
+      color: "black"
+
+effects:
+  zoom_in:
+    max_amount: 0.35
+    default_amount: 0.20
+    description: "Punch-in estável para enfatizar um argumento. Não usar gradualmente, pois causa jitter em celulares."
+
+  headline:
+    max_words: 8
+    safe_margin_top_px: 230
+    description: "Texto âncora superior que introduz o assunto do vídeo. Permanece visível na tela e não repete a legenda falada."
+
+  cta:
+    safe_margin_bottom_px: 300
+    description: "Chamada para ação na parte inferior do vídeo, exibida no trecho final."

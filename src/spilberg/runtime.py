@@ -33,4 +33,4 @@ def ensure_runtime() -> Path:
 
 
 def base_brain_root() -> Path:
-    return repository_root() / "brain" / "base"
+    return Path(__file__).resolve().parent / "data" / "brain"

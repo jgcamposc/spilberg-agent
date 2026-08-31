@@ -1,8 +1,11 @@
-Write-Host "Instalando Spilberg Agent..."
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install --upgrade pip
-pip install -e .
+if (-not [Environment]::Is64BitOperatingSystem) {
+    throw "Esta v1 é suportada apenas no Windows x64."
+}
 
-Write-Host "Instalação concluída! Rode 'spilberg doctor' para testar."
+$runtimeDir = if ($env:SPILBERG_RUNTIME_DIR) { $env:SPILBERG_RUNTIME_DIR } else { Join-Path $env:LOCALAPPDATA "Spilberg" }
+$bootstrap = Join-Path $PSScriptRoot "bootstrap.py"
+Write-Host "Instalando Spilberg Agent em runtime privado: $runtimeDir"
+python $bootstrap --runtime-dir $runtimeDir

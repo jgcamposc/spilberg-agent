@@ -27,6 +27,8 @@ class EffectType(str, Enum):
     SUBTITLE_STYLE = "subtitle_style"
     ZOOM_IN = "zoom_in"
     B_ROLL = "b_roll"
+    SPLIT_SCREEN = "split_screen"
+    AUDIO_DUCKING = "audio_ducking"
 
 
 class ViralScore(BaseModel):
@@ -96,6 +98,30 @@ class VisualEffect(BaseModel):
     def end_must_follow_start(self) -> "VisualEffect":
         if self.end_time <= self.start_time:
             raise ValueError("end_time do efeito precisa ser maior que start_time")
+        parameters = self.parameters
+        if self.effect_type == EffectType.B_ROLL:
+            source = str(parameters.get("source", "local"))
+            if source not in {"local", "pexels_api"}:
+                raise ValueError("B_ROLL source deve ser 'local' ou 'pexels_api'")
+            if source == "local" and not str(parameters.get("media_path", "")).strip():
+                raise ValueError("B_ROLL local exige media_path")
+            if source == "pexels_api" and not str(parameters.get("search_query", "")).strip():
+                raise ValueError("B_ROLL Pexels exige search_query")
+            if parameters.get("on_failure", "fail") not in {"fail", "skip"}:
+                raise ValueError("B_ROLL on_failure deve ser 'fail' ou 'skip'")
+            if parameters.get("transition", "cut") not in {"cut", "fade"}:
+                raise ValueError("B_ROLL transition deve ser 'cut' ou 'fade'")
+        if self.effect_type == EffectType.SPLIT_SCREEN:
+            if not str(parameters.get("media_path", "")).strip():
+                raise ValueError("SPLIT_SCREEN exige media_path")
+            if parameters.get("layout", "top_bottom") not in {"top_bottom", "side_by_side"}:
+                raise ValueError("SPLIT_SCREEN layout deve ser 'top_bottom' ou 'side_by_side'")
+        if self.effect_type == EffectType.AUDIO_DUCKING:
+            if not str(parameters.get("music_path", "")).strip():
+                raise ValueError("AUDIO_DUCKING exige music_path")
+            volume = float(parameters.get("music_volume", 0.18))
+            if not 0.01 <= volume <= 0.6:
+                raise ValueError("AUDIO_DUCKING music_volume deve estar entre 0.01 e 0.6")
         return self
 
 

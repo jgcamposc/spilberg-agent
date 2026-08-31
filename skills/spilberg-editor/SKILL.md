@@ -23,9 +23,12 @@ Você pode incluir **APENAS** estes efeitos em `effects`:
 - `headline`: Texto fixo no topo. Parâmetros sugeridos (vazios, o sistema apenas exibe a string).
 - `cta`: Chamada para ação final.
 - `subtitle_style`: Use `{"style": "hormozi"}` (padrão agressivo) ou `{"style": "cinematic"}` (documentário).
-- `zoom_in`: Punch-in de retenção. Obrigatório possuir `{"amount": 0.20}` (entre 0 e 0.35). O zoom só funciona e só deve ser usado DENTRO do limite de tempo de um segmento cortado.
+- `zoom_in`: Punch-in de retenção. Obrigatório possuir `{"amount": 0.20}` (entre 0 e 0.35). Use dentro do limite de um segmento cortado.
+- `b_roll`: Use apenas mídia local com `{"source":"local","media_path":"...","transition":"cut|fade"}`. Para Pexels, inclua `search_query` e defina `on_failure` como `fail` ou `skip`; `fail` é o padrão.
+- `split_screen`: Exige `media_path`, cobre toda a saída e usa `layout` igual a `top_bottom` ou `side_by_side`.
+- `audio_ducking`: Exige `music_path` local e aplica música de fundo rebaixada pela voz durante toda a saída.
 
-**NUNCA prometa**: B-roll, música, redução de ruído, auto-zoom fluído ou correção de cor. O Spilberg v1 foca em corte, reenquadramento por mediana e legendas perfeitas.
+Não prometa redução de ruído, correção de cor, tracking facial dinâmico, publicação em redes ou efeito que não conste no contrato acima. Para Pexels, informe o risco de dependência externa e nunca o marque como opcional sem `on_failure: "skip"`.
 
 ## Output
 Você deve exportar sua decisão no formato `AgentPlan` (JSON) que deve conter os blocos `EditPlan`.

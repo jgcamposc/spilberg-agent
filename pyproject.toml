@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Local-first, auditable video clipping agent for Codex."
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [{name = "JG Campos"}]
 dependencies = [
   "openai-whisper==20250625",
@@ -17,7 +17,7 @@ dependencies = [
   "pydantic==2.13.5",
   "PyYAML==6.0.3",
   "opencv-python==4.14.0.94",
-  "numpy==2.5.2",
+  "numpy==2.2.6",
   "certifi==2026.7.22",
   "imageio-ffmpeg==0.6.0",
 ]
@@ -32,7 +32,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-spilberg = ["data/*.xml"]
+spilberg = ["data/*.xml", "data/brain/*.md", "data/brain/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
