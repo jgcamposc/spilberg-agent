@@ -1,0 +1,36 @@
+{
+  "presets": [
+    {
+      "id": "hormozi_bold",
+      "name": "Estilo Alex Hormozi (Retenção Agressiva)",
+      "description": "Legendas Hormozi com destaque amarelo da palavra falada e punch-ins pontuais.",
+      "effects_template": [
+        {
+          "effect_type": "subtitle_style",
+          "parameters": {
+            "style": "hormozi"
+          }
+        },
+        {
+          "effect_type": "zoom_in",
+          "parameters": {
+            "amount": 0.15
+          }
+        }
+      ]
+    },
+    {
+      "id": "iman_cinematic",
+      "name": "Estilo Iman Gadzhi (Cinemático/Documentário)",
+      "description": "Legendas cinematográficas com texto menor e leitura centralizada na faixa inferior.",
+      "effects_template": [
+        {
+          "effect_type": "subtitle_style",
+          "parameters": {
+            "style": "cinematic"
+          }
+        }
+      ]
+    }
+  ]
+}

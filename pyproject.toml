@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spilberg-agent"
+version = "1.0.0"
+description = "Local-first, auditable video clipping agent for Codex."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "JG Campos"}]
+dependencies = [
+  "openai-whisper==20250625",
+  "auto-editor==29.3.1",
+  "yt-dlp==2026.8.19",
+  "pydantic==2.13.5",
+  "PyYAML==6.0.3",
+  "opencv-python==4.14.0.94",
+  "numpy==2.5.2",
+  "certifi==2026.7.22",
+  "imageio-ffmpeg==0.6.0",
+]
+
+[project.scripts]
+spilberg = "spilberg.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spilberg = ["data/*.xml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

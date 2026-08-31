@@ -1,0 +1,37 @@
+{
+  "presets": [
+    {
+      "id": "youtube_documentary",
+      "name": "Documentário YouTube (Horizontal 16:9)",
+      "description": "Edição horizontal focada em storytelling, com legenda cinematográfica, headline e punch-ins pontuais.",
+      "effects_template": [
+        {
+          "effect_type": "zoom_in",
+          "parameters": {
+            "amount": 0.10
+          }
+        }
+      ]
+    },
+    {
+      "id": "viral_hook_headline",
+      "name": "O Gancho Perfeito (Headline Viral)",
+      "description": "Nos primeiros segundos, exibe um título fixo no topo com legendas em estilo Hormozi.",
+      "effects_template": [
+        {
+          "effect_type": "headline",
+          "parameters": {
+            "text": "O SEGREDO DOS 1%",
+            "color": "white"
+          }
+        },
+        {
+          "effect_type": "subtitle_style",
+          "parameters": {
+            "style": "hormozi"
+          }
+        }
+      ]
+    }
+  ]
+}
