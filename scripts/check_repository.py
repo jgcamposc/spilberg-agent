@@ -20,6 +20,7 @@ def tracked_files(root: Path) -> list[Path]:
 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
+    checker = Path(__file__).resolve()
     violations: list[str] = []
     for path in tracked_files(root):
         relative = path.relative_to(root)
@@ -29,7 +30,7 @@ def main() -> None:
         if path.stat().st_size > MAX_FILE_BYTES:
             violations.append(f"arquivo acima de 20 MB: {relative}")
             continue
-        if path.suffix.lower() not in {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".sh", ".ps1", ".txt"}:
+        if path == checker or path.suffix.lower() not in {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".sh", ".ps1", ".txt"}:
             continue
         content = path.read_text(encoding="utf-8", errors="ignore")
         if any(marker in content for marker in SENSITIVE_MARKERS):
