@@ -1,0 +1,31 @@
+{
+  "name": "spilberg-agent",
+  "version": "1.0.1",
+  "description": "Agente local-first para selecionar, aprovar e renderizar cortes de vídeo auditáveis.",
+  "author": {
+    "name": "JG Campos",
+    "url": "https://github.com/jgcamposc"
+  },
+  "homepage": "https://github.com/jgcamposc/spilberg-agent",
+  "repository": "https://github.com/jgcamposc/spilberg-agent",
+  "license": "Apache-2.0",
+  "keywords": ["video", "editing", "ffmpeg", "local-first"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Spilberg Agent",
+    "shortDescription": "Cortes locais de vídeo com aprovação humana",
+    "longDescription": "Prepara evidências locais, pede uma decisão editorial, registra a aprovação e renderiza com QA técnico local.",
+    "developerName": "JG Campos",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "websiteURL": "https://github.com/jgcamposc/spilberg-agent",
+    "privacyPolicyURL": "https://github.com/jgcamposc/spilberg-agent/blob/main/docs/privacy.md",
+    "termsOfServiceURL": "https://github.com/jgcamposc/spilberg-agent/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Use $spilberg-editor para criar um AgentPlan a partir deste EvidencePack.",
+      "Use $spilberg-editor para revisar estes candidatos sem inventar falas.",
+      "Use $spilberg-editor para escolher cortes que funcionem isoladamente."
+    ],
+    "brandColor": "#E11D48"
+  }
+}
