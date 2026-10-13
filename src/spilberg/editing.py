@@ -32,68 +32,8 @@ class SpilbergOrchestrator:
             directory.mkdir(parents=True, exist_ok=True)
 
     def _resolve_executable(self, executable: str) -> str:
-        requested = Path(executable).expanduser()
-        if requested.parent != Path("."):
-            if requested.is_file():
-                return str(requested.resolve())
-            raise FileNotFoundError(f"Executável não encontrado: {requested}")
-
-        env_names = {
-            "ffmpeg": "SPILBERG_FFMPEG",
-            "ffprobe": "SPILBERG_FFPROBE",
-            "whisper": "SPILBERG_WHISPER",
-            "yt-dlp": "SPILBERG_YTDLP",
-            "edge-tts": "SPILBERG_EDGE_TTS",
-            "auto-editor": "SPILBERG_AUTO_EDITOR",
-        }
-        env_path = os.getenv(env_names.get(executable, ""))
-        if env_path and Path(env_path).is_file():
-            return str(Path(env_path).resolve())
-
-        suffix = ".exe" if os.name == "nt" else ""
-        # Do not resolve the interpreter symlink here. On macOS, a virtualenv
-        # commonly points at the system Python; resolving it would discard the
-        # virtualenv's bin directory and hide console tools such as whisper.
-        active_venv_bin = Path(sys.executable).parent
-        active_prefix = Path(sys.prefix)
-        candidates = [
-            active_venv_bin / f"{executable}{suffix}",
-            active_prefix / "bin" / executable,
-            active_prefix / "Scripts" / f"{executable}{suffix}",
-            self.project_root / ".venv" / "bin" / executable,
-            self.project_root / ".venv" / "Scripts" / f"{executable}{suffix}",
-            self.project_root / "lib" / "bin" / f"{executable}{suffix}",
-        ]
-        if (
-            executable == "auto-editor"
-            and system_platform.system() == "Darwin"
-            and system_platform.machine() == "arm64"
-        ):
-            bundled_auto_editor = self.project_root / "lib" / "bin" / "auto-editor"
-            candidates.remove(bundled_auto_editor)
-            candidates.insert(0, bundled_auto_editor)
-        for candidate in candidates:
-            if candidate.is_file():
-                return str(candidate.resolve())
-
-        on_path = shutil.which(executable)
-        if on_path:
-            return on_path
-
-        if executable == "ffmpeg":
-            try:
-                import imageio_ffmpeg
-
-                bundled = Path(imageio_ffmpeg.get_ffmpeg_exe())
-                if bundled.is_file():
-                    return str(bundled.resolve())
-            except (ImportError, RuntimeError):
-                pass
-
-        raise FileNotFoundError(
-            f"Executável '{executable}' não encontrado. "
-            "Rode 'python spilberg.py doctor' e depois o setup da plataforma."
-        )
+        from .media_clock import resolve_executable
+        return resolve_executable(executable, self.project_root)
 
     async def _run_command(self, cmd: list[str], name: str) -> tuple[str, str]:
         if not cmd:
@@ -253,7 +193,9 @@ class SpilbergOrchestrator:
         if not source_path.is_absolute():
             source_path = self.project_root / source_path
         source = self._require_file(source_path.resolve(), "Vídeo original")
-        source_duration = self._video_duration(source)
+        from .media_clock import probe_video
+        native = probe_video(source, self._resolve_executable("ffprobe"))
+        source_duration = native["duration"]
         segments = [segment for segment in plan.segments if segment.keep]
         for segment in segments:
             if segment.end_time > source_duration + 0.15:
@@ -279,6 +221,28 @@ class SpilbergOrchestrator:
                 "O plano pede legendas, mas transcript_path não existe."
             )
 
+        if plan.render_profile == "cibo":
+            from .spilberg2_engine import render_spilberg2_cut, captions_from_transcript
+            if len(segments) != 1 or plan.target_platform.value not in {"reels", "shorts", "instagram", "tiktok"}:
+                raise ValueError("CIBO requer um corte vertical por plano; monte os demais com o perfil standard")
+            if any(effect.effect_type not in {EffectType.SUBTITLE_STYLE, EffectType.HEADLINE} for effect in plan.effects):
+                raise ValueError("Efeito não suportado pelo perfil CIBO; use standard para preservar o plano")
+            segment = segments[0]
+            for effect in plan.effects:
+                allowed = {"style"} if effect.effect_type == EffectType.SUBTITLE_STYLE else {"text"}
+                if set(effect.parameters) - allowed or (effect.effect_type == EffectType.SUBTITLE_STYLE and effect.parameters.get("style", "cibo") != "cibo"):
+                    raise ValueError("O preset CIBO é fixo; use standard para outro estilo, cor ou parâmetro")
+                if effect.effect_type == EffectType.SUBTITLE_STYLE and (effect.start_time > segment.start_time + 0.001 or effect.end_time < segment.end_time - 0.001):
+                    raise ValueError("O preset CIBO requer legenda do corte completo; use standard para intervalo parcial")
+            caps = captions_from_transcript(json.loads(transcript.read_text()), segment.start_time, segment.end_time) if needs_transcript else []
+            if needs_transcript and not caps:
+                raise ValueError("Não há palavras temporizadas neste corte para as legendas CIBO")
+            headline_effect = next((e for e in plan.effects if e.effect_type == EffectType.HEADLINE), None)
+            headline = str(headline_effect.parameters.get("text", "")) if headline_effect else (plan.seo[0].title if plan.seo else "")
+            output = self._output_path(plan_file)
+            await asyncio.to_thread(render_spilberg2_cut, source, segment.start_time, segment.end_time, headline, caps, output, self.temp, encoder=plan.render_encoder, embed_cover=False)
+            return output
+
         job_dir = Path(
             tempfile.mkdtemp(prefix=f"{plan_file.stem}-", dir=str(self.temp))
         )
@@ -299,6 +263,12 @@ class SpilbergOrchestrator:
                     str(source),
                     "-t",
                     f"{segment.end_time - segment.start_time:.6f}",
+                    "-vf",
+                    "setpts=PTS-STARTPTS",
+                    "-af",
+                    "asetpts=PTS-STARTPTS",
+                    "-fps_mode",
+                    "passthrough",
                     "-c:v",
                     "libx264",
                     "-c:a",
@@ -480,7 +450,7 @@ class SpilbergOrchestrator:
                 "zoompan="
                 f"z='{zoom_expr}':d=1:"
                 "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"s={target_w}x{target_h}:fps=30"
+                f"s={target_w}x{target_h}:fps={native['rate']}"
             )
             filter_graph.append(f"{last_stream}{zoom_filter}[v_zoomed]")
             last_stream = "[v_zoomed]"
@@ -609,6 +579,8 @@ class SpilbergOrchestrator:
             "-map",
             last_stream,
             *audio_map,
+            "-fps_mode",
+            "passthrough",
             "-c:v",
             "libx264",
             "-crf",
@@ -645,6 +617,8 @@ class SpilbergOrchestrator:
             "output": str(final_output),
             "output_sha256": self._sha256(final_output),
             "platform": platform,
+            "source_frame_rate": native["rate"],
+            "render_engine": "spilberg2-native-master",
             "expected_duration": plan.selected_duration,
             "rendered_duration": rendered_duration,
             "anchor_method": "fixed_median",

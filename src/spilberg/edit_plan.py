@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -140,6 +140,8 @@ class EditPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     video_source: str
+    render_profile: Literal["standard", "cibo"] = "standard"
+    render_encoder: Literal["auto", "cpu", "videotoolbox"] = "auto"
     target_duration: float = Field(gt=0)
     segments: List[CutSegment] = Field(default_factory=list)
     effects: List[VisualEffect] = Field(default_factory=list)
@@ -154,6 +156,9 @@ class EditPlan(BaseModel):
     def normalize_and_validate(self) -> "EditPlan":
         if not self.segments:
             raise ValueError("o plano precisa conter ao menos um segmento")
+
+        if self.render_profile == "standard" and self.render_encoder == "videotoolbox":
+            raise ValueError("render_encoder videotoolbox requer render_profile cibo; standard preserva o encoder CPU existente")
 
         selected_duration = sum(
             segment.end_time - segment.start_time

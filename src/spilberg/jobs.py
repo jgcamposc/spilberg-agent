@@ -277,7 +277,7 @@ class JobStore:
         if existing.is_file():
             manifest = self._read_json(existing)
             if manifest.get("qa_passed") and all(Path(item["output"]).is_file() for item in manifest.get("outputs", [])):
-                return self._set_status(job_id, JobStatus.LOCAL_READY, next_step="deliver")
+                return self._promote_local_outputs(job_id, manifest)
         attempts = int(state.get("render_attempts", 0))
         if attempts >= 2:
             self._set_status(job_id, JobStatus.QA_FAILED, next_step="inspect_qa")
@@ -296,7 +296,14 @@ class JobStore:
             candidate_plan.export_json(str(plan_file))
             output = await orchestrator.execute_plan(str(plan_file), str(transcript))
             qa = await run_qa(output, engine_workspace / "qa", candidate_plan.target_platform.value, candidate_plan.selected_duration, orchestrator)
-            outputs.append({"candidate_id": candidate.candidate_id, "title": candidate.title, "output": str(output), "qa": qa})
+            item = {"candidate_id": candidate.candidate_id, "title": candidate.title, "output": str(output), "qa": qa}
+            receipt = output.with_suffix(".render.json")
+            if receipt.is_file():
+                render = self._read_json(receipt)
+                item["render_receipt"] = str(receipt)
+                if render.get("cover"):
+                    item["cover"] = render["cover"]
+            outputs.append(item)
         passed = all(item["qa"]["passed"] for item in outputs)
         manifest = {
             "created_at": _utc_now(),
@@ -310,17 +317,32 @@ class JobStore:
             self._set_status(job_id, JobStatus.QA_FAILED, next_step="finish")
             raise RuntimeError("QA falhou; nenhum video foi declarado como entregue")
         self._set_status(job_id, JobStatus.QA_PASSED, next_step="promote_local")
+        return self._promote_local_outputs(job_id, manifest)
+
+    def _promote_local_outputs(self, job_id, manifest):
+        """Recovery completes promotion too; never declare a missing cover ready."""
         final_dir = self.root / "outputs" / job_id
         final_dir.mkdir(parents=True, exist_ok=True)
-        for item in outputs:
-            original = Path(item["output"])
-            final_path = final_dir / original.name
-            if not final_path.exists():
-                shutil.copy2(original, final_path)
-            item["local_output"] = str(final_path)
-            item["output_sha256"] = file_sha256(final_path)
-        manifest["outputs"] = outputs
-        self._write_json(job_dir / "render-manifest.json", manifest)
+        for item in manifest["outputs"]:
+            for source_key, local_key, hash_key in [
+                ("output", "local_output", "output_sha256"),
+                ("cover", "local_cover", "cover_sha256"),
+                ("render_receipt", "local_render_receipt", "render_receipt_sha256"),
+            ]:
+                if not item.get(source_key):
+                    continue
+                original = Path(item[source_key])
+                if not original.is_file():
+                    raise FileNotFoundError(f"Artefato de render ausente: {original}")
+                final = final_dir / original.name
+                digest = file_sha256(original)
+                if final.exists() and file_sha256(final) != digest:
+                    raise RuntimeError("Artefato final mudou; preserve as duas versões antes de retomar")
+                if not final.exists():
+                    shutil.copy2(original, final)
+                item[local_key] = str(final)
+                item[hash_key] = digest
+        self._write_json(self.job_dir(job_id) / "render-manifest.json", manifest)
         return self._set_status(job_id, JobStatus.LOCAL_READY, next_step="deliver")
 
     def record_delivery(self, job_id: str, provider: str, file_id: str = "", url: str = "", mime: str = "video/mp4") -> dict[str, Any]:
