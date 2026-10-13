@@ -33,6 +33,7 @@ def _doctor() -> dict[str, object]:
         "pydantic": "pydantic",
         "opencv": "cv2",
         "numpy": "numpy",
+        "pillow": "PIL",
         "whisper": "whisper",
         "yt_dlp": "yt_dlp",
         "imageio_ffmpeg": "imageio_ffmpeg",
@@ -40,12 +41,14 @@ def _doctor() -> dict[str, object]:
     workspace = root / "doctor"
     orchestrator = SpilbergOrchestrator(str(workspace))
     executables: dict[str, object] = {}
-    for name in ("ffmpeg", "whisper", "yt-dlp", "auto-editor"):
+    for name in ("ffmpeg", "ffprobe", "whisper", "yt-dlp", "auto-editor"):
         try:
             executables[name] = {"available": True, "path": orchestrator._resolve_executable(name)}
         except FileNotFoundError:
             executables[name] = {"available": False, "path": None}
     brain = {path.name: path.is_file() and path.stat().st_size > 0 for path in base_brain_root().glob("*")}
+    cibo_root = Path(os.environ.get("SPILBERG_CIBO_ASSETS", Path(os.environ.get("SPILBERG_CIBO_DIR", Path(__file__).resolve().parents[3] / "cibo")) / "skills/podcast-reels/assets"))
+    cibo_assets = {name: (cibo_root / name).is_file() for name in ("CalSans-Regular.ttf", "filmburn_blue.mp4", "click.wav")}
     ready = all(packages.values()) and all(item["available"] for item in executables.values()) and all(brain.values())
     return {
         "version": __version__,
@@ -59,6 +62,10 @@ def _doctor() -> dict[str, object]:
             "local_first": True,
             "external_openai_api_required": False,
             "fixed_median_anchor": True,
+            "native_master_clock": True,
+            "cibo_finish_available": packages["pillow"] and all(cibo_assets.values()),
+            "cibo_assets": cibo_assets,
+            "cover_separate_by_default": True,
             "human_approval_gate": True,
             "local_broll": True,
             "pexels_broll_configured": bool(os.getenv("PEXELS_API_KEY")),

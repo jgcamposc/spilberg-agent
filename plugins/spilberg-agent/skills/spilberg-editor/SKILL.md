@@ -33,3 +33,8 @@ Não prometa redução de ruído, correção de cor, tracking facial dinâmico, 
 ## Output
 Você deve exportar sua decisão no formato `AgentPlan` (JSON) que deve conter os blocos `EditPlan`.
 Gere sempre planos `PENDING_APPROVAL`. Nunca aprove o próprio plano. O humano fará a auditoria.
+
+## Perfil CIBO — Spilberg 2.0
+Para um corte vertical único com acabamento CIBO, use `render_profile: "cibo"` e `render_encoder: "auto"` no EditPlan, mantendo `PENDING_APPROVAL`. O perfil aceita `headline` (capa separada) e `subtitle_style` com `{"style":"cibo"}` para o corte inteiro. Efeitos adicionais, múltiplos segmentos, legendas parciais e saída horizontal exigem `standard`; não descarte efeitos aprovados para forçar o perfil CIBO.
+
+Use `$spilberg2` para as dependências e o fluxo local desse perfil. A escolha de pessoa e a fidelidade à fala continuam sendo decisões editoriais; detecção facial não identifica quem fala.

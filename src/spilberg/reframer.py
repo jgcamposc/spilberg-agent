@@ -44,6 +44,8 @@ def get_smart_crop_params(
     max_samples: int = 300,
     target_w: int = 1080,
     target_h: int = 1920,
+    start_time: float = 0.0,
+    end_time: float | None = None,
 ) -> str:
     """
     Analisa o vídeo usando The Anchor Method (Mediana Estática).
@@ -68,9 +70,14 @@ def get_smart_crop_params(
     cascade_profile = _load_cascade("haarcascade_profileface.xml")
 
     # Uma leitura por segundo, limitada e distribuída pelo vídeo.
-    seconds = max(1, int(np.ceil(total_frames / fps)))
+    duration = total_frames / fps
+    end_time = duration if end_time is None else min(end_time, duration)
+    if max_samples < 1 or not 0 <= start_time < end_time:
+        cap.release()
+        raise ValueError("Intervalo de enquadramento inválido")
+    seconds = max(1, int(np.ceil(end_time - start_time)))
     sample_count = min(max_samples, seconds)
-    sample_frames = np.linspace(0, total_frames - 1, sample_count, dtype=int)
+    sample_frames = np.linspace(int(start_time * fps), min(total_frames - 1, int(end_time * fps) - 1), sample_count, dtype=int)
 
     # Não aumenta frames pequenos; 800 px preserva faces distantes sem custo excessivo.
     process_w = min(800, frame_w)
