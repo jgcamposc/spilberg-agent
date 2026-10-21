@@ -38,3 +38,6 @@ Gere sempre planos `PENDING_APPROVAL`. Nunca aprove o próprio plano. O humano f
 Para um corte vertical único com acabamento CIBO, use `render_profile: "cibo"` e `render_encoder: "auto"` no EditPlan, mantendo `PENDING_APPROVAL`. O perfil aceita `headline` (capa separada) e `subtitle_style` com `{"style":"cibo"}` para o corte inteiro. Efeitos adicionais, múltiplos segmentos, legendas parciais e saída horizontal exigem `standard`; não descarte efeitos aprovados para forçar o perfil CIBO.
 
 Use `$spilberg2` para as dependências e o fluxo local desse perfil. A escolha de pessoa e a fidelidade à fala continuam sendo decisões editoriais; detecção facial não identifica quem fala.
+
+Use também `$content-principles` para raciocinar sobre cortes, títulos e ritmo, preservando contexto e evidências da fonte.
+Na versão 2.1, a revisão do resultado vem depois de `finish`: relatórios por corte distinguem falhas técnicas de pendências editoriais. A aprovação prévia do plano não é aceite automático do MP4; siga `$spilberg2` para a revisão vinculada ao hash.

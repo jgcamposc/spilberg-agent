@@ -100,6 +100,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     events = []
+    caption_segments = []
     current_video_time = 0.0
 
     for segment in plan_segments:
@@ -126,6 +127,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             chunk_end = min(current_video_time + seg_duration, chunk_end)
             if chunk_end <= chunk_start:
                 continue
+
+            caption_segments.append({"start": chunk_start, "end": chunk_end,
+                                     "text": " ".join(word["word"].strip() for word in chunk)})
 
             if style_name == "hormozi":
                 # Para cada palavra no chunk, gera um evento onde só ela está destacada (amarela)
@@ -196,4 +200,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(ass_header + "\n".join(events) + "\n", encoding="utf-8")
+    # The renderer publishes these exact blocks alongside the resulting MP4.
+    destination.with_suffix(".captions.json").write_text(
+        json.dumps({"segments": caption_segments}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return destination

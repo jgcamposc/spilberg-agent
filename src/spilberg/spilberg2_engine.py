@@ -361,7 +361,7 @@ def make_intro_blur_zoom(passA_path, rate, out_intro, encoder="cpu", duration=IN
 def render_spilberg2_cut(master_path, t_start, t_end, headline, caps_data,
                          out_final_mp4, work_dir, cover_t_offset=4.0, *,
                          assets_dir=None, encoder="auto", intro=True,
-                         filmburn=True, clicks=True, embed_cover=False):
+                         filmburn=True, clicks=True, embed_cover=False, clip_id=None):
     """Direct master cut, native rational clock, median crop and optional CIBO.
 
     Headline is a separate cover by default. Embed is an explicit legacy mode.
@@ -458,7 +458,15 @@ def render_spilberg2_cut(master_path, t_start, t_end, headline, caps_data,
     with temporary.open('rb') as src, output.open('xb') as dst: shutil.copyfileobj(src,dst)
     if headline:
         with (work/'cover.jpg').open('rb') as src, cover.open('xb') as dst: shutil.copyfileobj(src,dst)
-    report.write_text(json.dumps({"engine":"spilberg2", "source":str(master), "start":t_start,"end":t_end,"source_frame_rate":info["rate"],"output_frame_rate":result["rate"],"expected_duration":expected,"output_duration":result["duration"],"av_duration_delta":delta,"full_decode":True,"speed":1,"headline_in_video":embed_cover,"cover":str(cover) if headline else None,"encoder":encoder,"work_dir":str(work)},indent=2)+"\n")
+    from .quality import fingerprints, write_captions
+    from .local_analysis import file_sha256
+    offset = float(1/Fraction(info["rate"])) if embed_cover else 0
+    captions_path = write_captions(output, clip_id or output.stem,
+        [{"start": c["s"] + offset, "end": c["e"] + offset, "text": " ".join(c["words"])} for c in caps])
+    report.write_text(json.dumps({"engine":"spilberg2", "source":str(master), "start":t_start,"end":t_end,"source_frame_rate":info["rate"],"output_frame_rate":result["rate"],"expected_duration":expected,"output_duration":result["duration"],"av_duration_delta":delta,"full_decode":True,"speed":1,"headline_in_video":embed_cover,"cover":str(cover) if headline else None,"encoder":encoder,"work_dir":str(work),
+        "source_sha256":file_sha256(master),"output_sha256":file_sha256(output),
+        "captions":str(captions_path),"captions_sha256":file_sha256(captions_path),
+        "assets":fingerprints([Path(p) for p in required])},indent=2)+"\n")
     return str(output)
 
 

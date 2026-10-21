@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import math
+import importlib.metadata
+import os
 import re
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterable
@@ -22,6 +24,7 @@ class TranscriptSegment:
     start: float
     end: float
     text: str
+    words: list[dict[str, Any]] = field(default_factory=list)
 
 
 def file_sha256(path: Path) -> str:
@@ -48,7 +51,7 @@ def normalize_transcript(data: Any) -> list[TranscriptSegment]:
         start = float(raw.get("start", 0))
         end = float(raw.get("end", start))
         if text and end > start:
-            result.append(TranscriptSegment(start=start, end=end, text=text))
+            result.append(TranscriptSegment(start=start, end=end, text=text, words=raw.get("words") or []))
     if not result:
         raise ValueError("Transcricao sem segmentos utilizaveis.")
     return result
@@ -56,6 +59,21 @@ def normalize_transcript(data: Any) -> list[TranscriptSegment]:
 
 def load_transcript(path: Path) -> list[TranscriptSegment]:
     return normalize_transcript(json.loads(path.read_text(encoding="utf-8")))
+
+
+def source_cache_path(cache_dir: Path, model_name: str) -> Path:
+    """The source hash is the cache directory; model and inference settings finish the key."""
+    candidate = Path(model_name)
+    model = candidate if candidate.is_file() else Path(os.getenv("SPILBERG_WHISPER_CACHE", Path.home() / ".cache/whisper")) / f"{model_name}.pt"
+    try:
+        version = importlib.metadata.version("openai-whisper")
+    except importlib.metadata.PackageNotFoundError:
+        version = "unavailable"
+    settings = {"source_sha256": cache_dir.name, "backend": "openai-whisper", "version": version,
+                "model": model_name, "model_sha256": file_sha256(model) if model.is_file() else None,
+                "word_timestamps": True, "language": "auto"}
+    key = sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+    return cache_dir / f"{key}.json"
 
 
 def transcribe_local(video: Path, model_name: str, destination: Path) -> list[TranscriptSegment]:

@@ -50,3 +50,12 @@ Não transforme esses princípios em fórmula, checklist exibido ou alegação d
 Confira duração, relógio da fonte, diferença A/V e decodificação no recibo; assista ao corte para validar enquadramento, fala, legendas e acabamento. Diferencie render local verificado, integração no app e publicação. O adaptador `spilberg.contenthub_adapter` existe, mas a adoção pelo app depende da configuração dele. Se o pedido contém `options.captionStyle`, preserve o finalizador compartilhado (`captionsBurned=false`).
 
 Entregue apenas os arquivos finais solicitados. Aprovação editorial não autoriza publicação, envio externo ou alteração de credenciais.
+
+## Revisão do resultado (2.1)
+
+No fluxo de jobs, `finish` gera os cortes e relatórios por ID e retorna `REVIEW_REQUIRED`.
+Leia os relatórios, confira o MP4 completo e os alertas de fala/legenda/imagem.
+Registre a revisão com `spilberg review JOB_ID CANDIDATE_ID --decision approve|reject --reviewer NOME --notes JUSTIFICATIVA --report-sha256 HASH`.
+Use a identidade de quem realmente revisou e respeite a autorização da tarefa; não registre revisão sem assistir/escutar.
+Só `LOCAL_READY` permite entrega. ASR indisponível pede escuta manual; falha determinística não pode ser dispensada.
+O hash vincula a revisão ao relatório e vídeo exatos. Consulte `spilberg review --help` e a documentação `docs/quality-review.md` do repositório quando precisar retomar um job antigo.

@@ -88,6 +88,9 @@ def test_jobstore_cibo_approved_flow_reaches_local_ready(tmp_path, master_factor
     with pytest.raises(RuntimeError):asyncio.run(store.finish(job))
     store.approve(job,'Approved local fixture, no publication')
     final=asyncio.run(store.finish(job))
+    assert final['status']=='REVIEW_REQUIRED'
+    pending_report=store._read_json(store.job_dir(job)/'render-manifest.json')['outputs'][0]
+    final=store.review(job,'clip-01','approve','synthetic-test-reviewer','Synthetic compositor fixture reviewed, not client editorial acceptance',pending_report['quality_report_sha256'])
     assert final['status']=='LOCAL_READY'
     manifest=json.loads((store.job_dir(job)/'render-manifest.json').read_text());assert manifest['qa_passed']
     for item in manifest['outputs']:

@@ -32,7 +32,9 @@ Não são recursos presentes: xfade entre cortes, tracking facial dinâmico, red
 
 ```text
 PREPARED → READY_FOR_EDITORIAL → PENDING_APPROVAL → APPROVED
-         → RENDERING → QA_PASSED → LOCAL_READY → DELIVERED
+         → RENDERING → REVIEW_REQUIRED → LOCAL_READY → DELIVERED
 ```
 
 `STALE_SOURCE`, `INVALID_PLAN`, `QA_FAILED` e `DRIVE_BLOCKED` interrompem a promoção. O máximo é de duas renderizações por job. Uma aprovação autoriza apenas os arquivos e o plano cujo SHA-256 estão registrados.
+
+Desde 2.1, `finish` agrega QA por corte e `review` registra o aceite editorial do MP4 e relatório exatos antes da promoção. Transcrição e assets locais conhecidos também ficam vinculados à aprovação. Veja [revisão, caches e migração](quality-review.md).
