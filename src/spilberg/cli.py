@@ -103,6 +103,9 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "finish":
         _emit(await store.finish(args.job_id))
         return 0
+    if args.command == "review":
+        _emit(store.review(args.job_id, args.candidate_id, args.decision, args.reviewer, args.notes, args.report_sha256))
+        return 0
     if args.command == "deliver":
         _emit(store.record_delivery(args.job_id, args.provider, args.file_id, args.url, args.mime))
         return 0
@@ -144,6 +147,13 @@ def parser() -> argparse.ArgumentParser:
     approve.add_argument("--approval-text", required=True)
     finish = commands.add_parser("finish", help="Renderiza e executa QA sem reanalise editorial.")
     finish.add_argument("job_id")
+    review = commands.add_parser("review", help="Registra revisão editorial do MP4/relatório exatos.")
+    review.add_argument("job_id")
+    review.add_argument("candidate_id")
+    review.add_argument("--decision", required=True, choices=("approve", "reject"))
+    review.add_argument("--reviewer", required=True)
+    review.add_argument("--notes", required=True)
+    review.add_argument("--report-sha256", required=True)
     deliver = commands.add_parser("deliver", help="Registra entrega local ou Drive confirmado.")
     deliver.add_argument("job_id")
     deliver.add_argument("--provider", default="local", choices=("local", "google-drive"))

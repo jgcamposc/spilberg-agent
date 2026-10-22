@@ -1,4 +1,4 @@
-# Spilberg Agent v2.0
+# Spilberg Agent v2.1
 
 Agente local-first para edição de vídeo auditável com uma etapa editorial no Codex e execução técnica local.
 
@@ -26,6 +26,13 @@ Relógio nativo do master e perfil CIBO estão integrados aos planos aprovados. 
 
 ## Spilberg 2.0 e plugin Codex
 
-O pacote e o plugin passam a usar a versão `2.0.0`. O plugin distribui `$spilberg-editor` para decisão editorial e `$spilberg2` para orientar o perfil CIBO. A instalação do plugin disponibiliza as instruções; o motor Python e os assets CIBO precisam estar disponíveis localmente.
+O pacote e o plugin usam a versão `2.1.0`. O plugin distribui `$spilberg-editor`, `$spilberg2` e `$content-principles`. A instalação do plugin disponibiliza as instruções; o motor Python e os assets CIBO precisam estar disponíveis localmente.
+
+## Revisão de qualidade 2.1
+
+O fluxo de jobs passa a `prepare → submit-plan → approve → finish → review → deliver`.
+Cada corte recebe um relatório de fala, legenda, eventos visuais e integridade.
+Somente após revisão editorial da versão exata do MP4 ele chega a `LOCAL_READY`.
+Veja [comandos, modelos locais, limites e migração](docs/quality-review.md).
 
 O perfil padrão continua disponível. O perfil CIBO suporta um corte vertical por plano, Cal Sans, entrada zoom/blur, filmburn, cliques e capa separada. Os assets não são distribuídos no repositório: configure `SPILBERG_CIBO_ASSETS` e execute `spilberg doctor`. Confira [o contrato e os limites da integração](docs/spilberg2-integration.md) antes de selecionar esse perfil.

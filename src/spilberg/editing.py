@@ -240,7 +240,12 @@ class SpilbergOrchestrator:
             headline_effect = next((e for e in plan.effects if e.effect_type == EffectType.HEADLINE), None)
             headline = str(headline_effect.parameters.get("text", "")) if headline_effect else (plan.seo[0].title if plan.seo else "")
             output = self._output_path(plan_file)
-            await asyncio.to_thread(render_spilberg2_cut, source, segment.start_time, segment.end_time, headline, caps, output, self.temp, encoder=plan.render_encoder, embed_cover=False)
+            await asyncio.to_thread(render_spilberg2_cut, source, segment.start_time, segment.end_time, headline, caps, output, self.temp, encoder=plan.render_encoder, embed_cover=False, clip_id=plan_file.stem)
+            from .quality import write_json
+            receipt_path = output.with_suffix(".render.json")
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt.update(plan_sha256=self._sha256(plan_file), transcript_sha256=self._sha256(transcript) if transcript else None)
+            write_json(receipt_path, receipt)
             return output
 
         job_dir = Path(
@@ -513,6 +518,7 @@ class SpilbergOrchestrator:
             filter_graph.append(f"[{main_label}][{aux_label}]{stack}=inputs=2[{output_label}]")
             last_stream = f"[{output_label}]"
 
+        caption_segments = []
         text_effects = [
             effect
             for effect in plan.effects
@@ -554,6 +560,7 @@ class SpilbergOrchestrator:
                 target_w=target_w,
                 target_h=target_h,
             )
+            caption_segments = json.loads(ass_path.with_suffix(".captions.json").read_text(encoding="utf-8"))["segments"]
             escaped_ass = ass_path.as_posix().replace(":", r"\:")
             sub_filter = f"{last_stream}subtitles='{escaped_ass}'[v_subbed]"
             filter_graph.append(sub_filter)
@@ -623,6 +630,16 @@ class SpilbergOrchestrator:
             "rendered_duration": rendered_duration,
             "anchor_method": "fixed_median",
         }
+        from .quality import fingerprints, write_captions, write_json
+        captions_path = write_captions(final_output, plan_file.stem, caption_segments)
+        assets = [(self.project_root / Path(b.parameters["media_path"])).resolve() for b in brolls]
+        assets += [self.project_root / Path(s.parameters["media_path"]) for s in split_screens]
+        if ducking_effect:
+            assets.append(music_full_path)
+        manifest.update(transcript_sha256=self._sha256(transcript) if transcript else None,
+                        captions=str(captions_path), captions_sha256=self._sha256(captions_path),
+                        assets=fingerprints(assets), font_resolution="system font via libass")
+        write_json(final_output.with_suffix(".render.json"), manifest)
         (job_dir / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
             encoding="utf-8",

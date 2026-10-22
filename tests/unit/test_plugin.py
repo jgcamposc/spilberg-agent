@@ -28,3 +28,10 @@ def test_marketplace_points_to_a_packaged_plugin_without_drift():
     assert (package_root / "skills" / "spilberg-editor" / "agents" / "openai.yaml").read_text(
         encoding="utf-8"
     ) == (root / "skills" / "spilberg-editor" / "agents" / "openai.yaml").read_text(encoding="utf-8")
+
+
+def test_marketplace_distributes_every_skill_resource():
+    root = Path(__file__).resolve().parents[2]
+    def resources(folder):
+        return {p.relative_to(folder): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+    assert resources(root / "plugins/spilberg-agent/skills") == resources(root / "skills")

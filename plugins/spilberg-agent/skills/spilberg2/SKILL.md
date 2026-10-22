@@ -38,8 +38,24 @@ A CLI direta não registra a aprovação de um job; confirme a autorização e a
 
 A saída inclui MP4, recibo `.render.json` e `.cover.jpg` quando existe headline. A headline fica fora do vídeo por padrão. `--embed-cover` insere explicitamente um frame com silêncio correspondente; não ative automaticamente para Content Hub. `--no-intro`, `--no-filmburn` e `--no-clicks` permitem acabamento simples.
 
+
+## Retenção editorial
+
+Ao selecionar trecho, revisar roteiro/transcrição, definir headline ou avaliar o ritmo de um corte curto, use também `content-principles` como raciocínio editorial. A skill deve orientar a decisão em silêncio: pensar na pessoa que verá o vídeo, no valor por segundo, na progressão entre linhas, na curiosidade, na especificidade e no que não sustenta a promessa central.
+
+Não transforme esses princípios em fórmula, checklist exibido ou alegação de resultado. Preserve fatos, sequência e contexto da fonte; se o gancho pretendido não for sustentado pelo material, sinalize a limitação editorial em vez de inventar prova ou mudar o sentido da fala.
+
 ## Conferência e entrega
 
 Confira duração, relógio da fonte, diferença A/V e decodificação no recibo; assista ao corte para validar enquadramento, fala, legendas e acabamento. Diferencie render local verificado, integração no app e publicação. O adaptador `spilberg.contenthub_adapter` existe, mas a adoção pelo app depende da configuração dele. Se o pedido contém `options.captionStyle`, preserve o finalizador compartilhado (`captionsBurned=false`).
 
 Entregue apenas os arquivos finais solicitados. Aprovação editorial não autoriza publicação, envio externo ou alteração de credenciais.
+
+## Revisão do resultado (2.1)
+
+No fluxo de jobs, `finish` gera os cortes e relatórios por ID e retorna `REVIEW_REQUIRED`.
+Leia os relatórios, confira o MP4 completo e os alertas de fala/legenda/imagem.
+Registre a revisão com `spilberg review JOB_ID CANDIDATE_ID --decision approve|reject --reviewer NOME --notes JUSTIFICATIVA --report-sha256 HASH`.
+Use a identidade de quem realmente revisou e respeite a autorização da tarefa; não registre revisão sem assistir/escutar.
+Só `LOCAL_READY` permite entrega. ASR indisponível pede escuta manual; falha determinística não pode ser dispensada.
+O hash vincula a revisão ao relatório e vídeo exatos. Consulte `spilberg review --help` e a documentação `docs/quality-review.md` do repositório quando precisar retomar um job antigo.

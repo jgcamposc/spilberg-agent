@@ -19,6 +19,7 @@ from .local_analysis import (
     load_transcript,
     transcript_to_json,
     transcribe_local,
+    source_cache_path,
 )
 from .runtime import ensure_runtime
 
@@ -30,6 +31,7 @@ class JobStatus(str, Enum):
     APPROVED = "APPROVED"
     RENDERING = "RENDERING"
     QA_PASSED = "QA_PASSED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
     LOCAL_READY = "LOCAL_READY"
     UPLOADING = "UPLOADING"
     DELIVERED = "DELIVERED"
@@ -185,20 +187,21 @@ class JobStore:
         job_dir = self.job_dir(job_id)
         cache_dir = self.cache / state["source_sha256"]
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cached_transcript = cache_dir / "transcript.json"
+        cached_transcript = source_cache_path(cache_dir, model_name)
         local_transcript = job_dir / "transcript.json"
         reused = False
         if transcript_path:
             segments = load_transcript(transcript_path.expanduser().resolve())
             self._write_json(local_transcript, transcript_to_json(segments))
-            self._write_json(cached_transcript, transcript_to_json(segments))
+            # A supplied transcript must not become an automatic ASR cache entry.
         elif cached_transcript.is_file():
             shutil.copy2(cached_transcript, local_transcript)
             segments = load_transcript(local_transcript)
             reused = True
         else:
             segments = transcribe_local(source, model_name, local_transcript)
-            shutil.copy2(local_transcript, cached_transcript)
+            # Recompute after inference: a newly provisioned model now has a weight hash.
+            shutil.copy2(local_transcript, source_cache_path(cache_dir, model_name))
         evidence = build_evidence(segments, state["source_sha256"])
         self._write_json(job_dir / "evidence.json", evidence)
         (job_dir / "evidence.md").write_text(evidence_markdown(evidence), encoding="utf-8")
@@ -256,6 +259,8 @@ class JobStore:
             "approved_plan_sha256": file_sha256(approved),
             "drive_destination": plan.drive_destination,
         }
+        from .quality import approval_inputs
+        record["dependencies"] = approval_inputs(plan, self.job_dir(job_id) / "transcript.json")
         self._write_json(self.job_dir(job_id) / "approval.json", record)
         return self._set_status(job_id, JobStatus.APPROVED, next_step="finish")
 
@@ -264,7 +269,7 @@ class JobStore:
         from .qa import run_qa
 
         state = self.load_state(job_id)
-        if state["status"] not in {JobStatus.APPROVED.value, JobStatus.RENDERING.value, JobStatus.QA_FAILED.value}:
+        if state["status"] not in {JobStatus.APPROVED.value, JobStatus.RENDERING.value, JobStatus.QA_FAILED.value, JobStatus.REVIEW_REQUIRED.value}:
             raise RuntimeError(f"Job em estado incompatível para finish: {state['status']}")
         source = self._check_source(job_id)
         job_dir = self.job_dir(job_id)
@@ -273,11 +278,16 @@ class JobStore:
         if file_sha256(approved_path) != approval["approved_plan_sha256"]:
             self._set_status(job_id, JobStatus.INVALID_PLAN, next_step="submit_plan")
             raise RuntimeError("Plano aprovado mudou; nova aprovacao e obrigatoria.")
+        from .quality import verify_fingerprints, review_output
+        verify_fingerprints(approval.get("dependencies", {}))
         existing = job_dir / "render-manifest.json"
         if existing.is_file():
             manifest = self._read_json(existing)
-            if manifest.get("qa_passed") and all(Path(item["output"]).is_file() for item in manifest.get("outputs", [])):
-                return self._promote_local_outputs(job_id, manifest)
+            if manifest.get("schema_version") == "2.0":
+                # Recovery must revalidate content, not trust a historical qa_passed flag.
+                if state["status"] == JobStatus.QA_FAILED.value:
+                    manifest = await self._recheck_quality(job_id, manifest)
+                return self._complete_quality(job_id, manifest)
         attempts = int(state.get("render_attempts", 0))
         if attempts >= 2:
             self._set_status(job_id, JobStatus.QA_FAILED, next_step="inspect_qa")
@@ -295,7 +305,10 @@ class JobStore:
             candidate_plan.status = PlanStatus.APPROVED
             candidate_plan.export_json(str(plan_file))
             output = await orchestrator.execute_plan(str(plan_file), str(transcript))
-            qa = await run_qa(output, engine_workspace / "qa", candidate_plan.target_platform.value, candidate_plan.selected_duration, orchestrator)
+            try:
+                qa = await run_qa(output, engine_workspace / "qa", candidate_plan.target_platform.value, candidate_plan.selected_duration, orchestrator)
+            except Exception as error:
+                qa = {"passed": False, "error": str(error)}
             item = {"candidate_id": candidate.candidate_id, "title": candidate.title, "output": str(output), "qa": qa}
             receipt = output.with_suffix(".render.json")
             if receipt.is_file():
@@ -303,9 +316,18 @@ class JobStore:
                 item["render_receipt"] = str(receipt)
                 if render.get("cover"):
                     item["cover"] = render["cover"]
+            quality_report = await asyncio.to_thread(review_output, output, candidate.candidate_id, candidate_plan, transcript,
+                                                    engine_workspace / "qa" / candidate.candidate_id, qa, approved_path)
+            quality = self._read_json(quality_report)
+            item.update(quality_report=str(quality_report), quality_report_sha256=file_sha256(quality_report),
+                        quality_status=quality["status"], output_sha256=file_sha256(output))
+            captions = output.with_suffix(".captions.json")
+            if captions.is_file():
+                item["captions"] = str(captions)
             outputs.append(item)
-        passed = all(item["qa"]["passed"] for item in outputs)
+        passed = bool(outputs) and all(item["quality_status"] != "FAIL" for item in outputs)
         manifest = {
+            "schema_version": "2.0",
             "created_at": _utc_now(),
             "source_sha256": state["source_sha256"],
             "approved_plan_sha256": approval["approved_plan_sha256"],
@@ -313,21 +335,124 @@ class JobStore:
             "qa_passed": passed,
         }
         self._write_json(job_dir / "render-manifest.json", manifest)
-        if not passed:
-            self._set_status(job_id, JobStatus.QA_FAILED, next_step="finish")
-            raise RuntimeError("QA falhou; nenhum video foi declarado como entregue")
-        self._set_status(job_id, JobStatus.QA_PASSED, next_step="promote_local")
+        return self._complete_quality(job_id, manifest)
+
+    async def _recheck_quality(self, job_id, manifest):
+        """Retry verification of unchanged renders; archive reports and invalidate review."""
+        from uuid import uuid4
+        from .editing import SpilbergOrchestrator
+        from .qa import run_qa
+        from .quality import review_output, verify_fingerprints
+        directory = self.job_dir(job_id)
+        approved = directory / "agent-plan.approved.json"
+        plan = AgentPlan.model_validate_json(approved.read_text(encoding="utf-8"))
+        candidates = {c.candidate_id: c for c in plan.candidates}
+        orchestrator = SpilbergOrchestrator(str(directory / "engine"))
+        for item in manifest["outputs"]:
+            # A corrupt/substituted artifact is not repaired by approving new hashes.
+            verify_fingerprints({item["output"]: item["output_sha256"]})
+            previous = self._read_json(Path(item["quality_report"]))
+            if Path(item["output"]).resolve() != Path(previous["video"]).resolve():
+                raise RuntimeError("MP4 não corresponde ao relatório anterior")
+            edit = EditPlan.model_validate(candidates[item["candidate_id"]].edit_plan)
+            run_dir = directory / "engine/qa" / item["candidate_id"] / f"recheck-{uuid4().hex[:12]}"
+            try:
+                qa = await run_qa(Path(item["output"]), run_dir, edit.target_platform.value, edit.selected_duration, orchestrator)
+            except Exception as error:
+                qa = {"passed": False, "error": str(error)}
+            report = await asyncio.to_thread(review_output, Path(item["output"]), item["candidate_id"], edit,
+                directory / "transcript.json", run_dir, qa, approved)
+            item.setdefault("quality_history", []).append({"path": item["quality_report"], "sha256": item["quality_report_sha256"],
+                                                           "editorial_review": item.pop("editorial_review", None)})
+            item.update(qa=qa, quality_report=str(report), quality_report_sha256=file_sha256(report),
+                        quality_status=self._read_json(report)["status"])
+        manifest["qa_passed"] = all(i["quality_status"] != "FAIL" for i in manifest["outputs"])
+        self._write_json(directory / "render-manifest.json", manifest)
+        return manifest
+
+    def _quality_ready(self, job_id, manifest):
+        try:
+            return self._validate_quality(job_id, manifest)
+        except (OSError, ValueError, KeyError, RuntimeError) as error:
+            self._set_status(job_id, JobStatus.QA_FAILED, next_step="inspect_quality_report", quality_error=str(error))
+            raise RuntimeError(f"Evidência de revisão mudou ou está ausente: {error}") from error
+
+    def _validate_quality(self, job_id, manifest):
+        from .quality import verify_fingerprints
+        if manifest.get("schema_version") != "2.0" or not manifest.get("outputs"):
+            raise RuntimeError("Manifesto sem revisão de qualidade; execute finish para gerar revisão")
+        approval = self._read_json(self.job_dir(job_id) / "approval.json")
+        verify_fingerprints(approval.get("dependencies", {}))
+        if file_sha256(self.job_dir(job_id) / "agent-plan.approved.json") != approval["approved_plan_sha256"]:
+            raise RuntimeError("Plano aprovado mudou")
+        ready, failed = True, False
+        for item in manifest["outputs"]:
+            path = Path(item["quality_report"])
+            if file_sha256(path) != item["quality_report_sha256"]:
+                raise RuntimeError("Relatório de qualidade mudou")
+            report = self._read_json(path)
+            if report["clip_id"] != item["candidate_id"] or report["video_sha256"] != item["output_sha256"]:
+                raise RuntimeError("Relatório associado ao corte errado")
+            for role in ("output", "cover", "render_receipt", "captions"):
+                expected = report.get("artifacts", {}).get(role)
+                if item.get(role):
+                    if not expected or Path(item[role]).resolve() != Path(expected["path"]).resolve():
+                        raise RuntimeError(f"Caminho de {role} não corresponde à revisão")
+                elif expected:
+                    raise RuntimeError(f"Artefato {role} ausente do manifesto")
+            verify_fingerprints(report["inputs"])
+            if report["status"] == "FAIL":
+                failed, ready = True, False
+            record = item.get("editorial_review", {})
+            if (record.get("decision") != "approve" or record.get("report_sha256") != item["quality_report_sha256"]
+                    or record.get("video_sha256") != report["video_sha256"]):
+                ready = False
+        return ready, failed
+
+    def _complete_quality(self, job_id, manifest):
+        ready, failed = self._quality_ready(job_id, manifest)
+        if failed:
+            self._set_status(job_id, JobStatus.QA_FAILED, next_step="inspect_quality_report")
+            raise RuntimeError("QA falhou; corrija o problema antes da entrega")
+        if not ready:
+            return self._set_status(job_id, JobStatus.REVIEW_REQUIRED, next_step="review",
+                                    quality_reports=[i["quality_report"] for i in manifest["outputs"]])
         return self._promote_local_outputs(job_id, manifest)
+
+    def review(self, job_id: str, candidate_id: str, decision: str, reviewer: str, notes: str, report_sha256: str):
+        self._check_source(job_id)
+        if decision not in {"approve", "reject"} or not reviewer.strip() or not notes.strip():
+            raise ValueError("Revisão exige decisão, revisor e justificativa")
+        if self.load_state(job_id)["status"] not in {JobStatus.REVIEW_REQUIRED.value, JobStatus.QA_FAILED.value}:
+            raise RuntimeError("Job não está aguardando revisão")
+        manifest = self._read_json(self.job_dir(job_id) / "render-manifest.json")
+        _, failed = self._quality_ready(job_id, manifest)
+        item = next((i for i in manifest["outputs"] if i["candidate_id"] == candidate_id), None)
+        if not item or report_sha256 != item["quality_report_sha256"]:
+            raise RuntimeError("ID ou hash do relatório não corresponde ao material revisado")
+        if failed and decision == "approve":
+            raise RuntimeError("QA determinístico falhou; a revisão não pode dispensar a falha")
+        item["editorial_review"] = {"reviewed_at": _utc_now(), "decision": decision, "reviewer": reviewer.strip(),
+                                    "notes": notes.strip(), "report_sha256": report_sha256,
+                                    "video_sha256": item["output_sha256"]}
+        self._write_json(self.job_dir(job_id) / "render-manifest.json", manifest)
+        return self._complete_quality(job_id, manifest)
 
     def _promote_local_outputs(self, job_id, manifest):
         """Recovery completes promotion too; never declare a missing cover ready."""
+        ready, failed = self._quality_ready(job_id, manifest)
+        if failed or not ready:
+            raise RuntimeError("Entrega requer QA e revisão editorial da versão atual")
         final_dir = self.root / "outputs" / job_id
         final_dir.mkdir(parents=True, exist_ok=True)
         for item in manifest["outputs"]:
+            report = self._read_json(Path(item["quality_report"]))
             for source_key, local_key, hash_key in [
                 ("output", "local_output", "output_sha256"),
                 ("cover", "local_cover", "cover_sha256"),
                 ("render_receipt", "local_render_receipt", "render_receipt_sha256"),
+                ("captions", "local_captions", "captions_sha256"),
+                ("quality_report", "local_quality_report", "quality_report_sha256"),
             ]:
                 if not item.get(source_key):
                     continue
@@ -335,11 +460,16 @@ class JobStore:
                 if not original.is_file():
                     raise FileNotFoundError(f"Artefato de render ausente: {original}")
                 final = final_dir / original.name
-                digest = file_sha256(original)
+                digest = (item["quality_report_sha256"] if source_key == "quality_report" else
+                          report["artifacts"][source_key]["sha256"])
+                if file_sha256(original) != digest:
+                    raise RuntimeError("Artefato mudou durante a promoção")
                 if final.exists() and file_sha256(final) != digest:
                     raise RuntimeError("Artefato final mudou; preserve as duas versões antes de retomar")
                 if not final.exists():
                     shutil.copy2(original, final)
+                if file_sha256(final) != digest:
+                    raise RuntimeError("Cópia não corresponde ao artefato revisado")
                 item[local_key] = str(final)
                 item[hash_key] = digest
         self._write_json(self.job_dir(job_id) / "render-manifest.json", manifest)
@@ -350,6 +480,20 @@ class JobStore:
         if state["status"] not in {JobStatus.LOCAL_READY.value, JobStatus.DRIVE_BLOCKED.value, JobStatus.UPLOADING.value}:
             raise RuntimeError("Entrega exige um job localmente pronto")
         manifest = self._read_json(self.job_dir(job_id) / "render-manifest.json")
+        self._check_source(job_id)
+        ready, failed = self._quality_ready(job_id, manifest)
+        if not ready or failed:
+            raise RuntimeError("Entrega exige revisão atual")
+        from .quality import verify_fingerprints
+        try:
+            for item in manifest["outputs"]:
+                verify_fingerprints({item[key]: item[digest] for key, digest in (
+                    ("local_output", "output_sha256"), ("local_cover", "cover_sha256"),
+                    ("local_render_receipt", "render_receipt_sha256"), ("local_captions", "captions_sha256"),
+                    ("local_quality_report", "quality_report_sha256")) if item.get(key)})
+        except RuntimeError:
+            self._set_status(job_id, JobStatus.QA_FAILED, next_step="inspect_local_outputs")
+            raise
         delivery = {
             "delivered_at": _utc_now(),
             "provider": provider,

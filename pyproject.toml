@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spilberg-agent"
-version = "2.0.0"
+version = "2.1.0"
 description = "Local-first, auditable video clipping agent for Codex."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,8 +18,8 @@ dependencies = [
   "PyYAML==6.0.3",
   "opencv-python==4.14.0.94",
   "numpy==2.2.6",
-  "Pillow==12.3.0",
-  "certifi==2026.7.22",
+  "Pillow==13.0.0",
+  "certifi==2026.10.19",
   "imageio-ffmpeg==0.6.0",
 ]
 

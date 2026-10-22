@@ -1,6 +1,6 @@
 {
   "name": "spilberg-agent",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Agente local-first para selecionar, aprovar e renderizar cortes de vídeo auditáveis.",
   "author": {
     "name": "JG Campos",
@@ -17,7 +17,7 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Spilberg Agent 2.0",
+    "displayName": "Spilberg Agent 2.1",
     "shortDescription": "Cortes locais de vídeo com aprovação humana",
     "longDescription": "Prepara evidências e planos aprováveis; renderiza localmente com QA técnico, relógio nativo da fonte e perfil CIBO opcional.",
     "developerName": "JG Campos",
