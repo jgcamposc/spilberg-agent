@@ -71,3 +71,21 @@ algarismos resultou em REVIEW_REQUIRED, não aprovação automática. Não é pi
   conforme plano aprovado. Nenhum desses itens foi declarado operacional.
 
 Sem achados Minor adiados. Instalação local, vault, merge e release não alterados.
+
+## Gate remoto de integração
+
+O primeiro CI remoto expôs um pré-requisito que o ambiente local já possuía:
+FFmpeg padrão do Homebrew sem libass. Dez testes de legendas falharam com erro de
+filtro. A fórmula oficial ffmpeg-full inclui libass; CI passa a selecioná-la no
+PATH, usando macOS 15 com bottle suportada. Regressão de configuração RED→GREEN.
+Referência: https://formulae.brew.sh/formula/ffmpeg-full
+
+A auditoria remota também encontrou 25 alertas nos pins anteriores Pillow 12.3.0
+e certifi 2026.7.22, sem relação com os novos módulos. Atualizados os dois arquivos
+de dependências para Pillow 13.0.0 e certifi 2026.10.19, versões de correção
+indicadas pelo próprio pip-audit. Paridade e versões ganharam teste RED→GREEN.
+Validação das versões novas usa pasta isolada, sem alterar instalação existente.
+Auditoria local de dependências diretas: sem vulnerabilidades conhecidas; resolução
+transitiva completa continua gate do CI Linux. Não foram suprimidos alertas.
+Validação final com as duas versões corrigidas: 72 passed, 0 skipped, 23,68 s;
+wheel/sdist gerados novamente. CI remoto precisa confirmar este novo commit.
