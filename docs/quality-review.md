@@ -32,6 +32,9 @@ Uma falha determinística retorna `QA_FAILED`, código de saída não zero no `f
 e impede a aprovação final. Para mudar uma decisão de corte ou dependência
 aprovada, prepare um novo job com o material corrigido, sem sobrescrever o anterior.
 Retomar `finish` num job em revisão reaproveita os artefatos íntegros, sem render novo.
+Após uma falha transitória de verificação, `finish` refaz o QA do mesmo MP4,
+preservando relatórios e imagens anteriores em caminhos exclusivos. A nova revisão
+invalida qualquer aceite editorial anterior; não autoriza trocar o vídeo ou o plano.
 
 ## O que é conferido
 
@@ -57,6 +60,9 @@ A revisão de fala usa Whisper local em CPU, português, tempos por palavra e
 temperatura zero. Por padrão procura `large-v3.pt` já instalado. Pode-se escolher
 outro modelo local com `SPILBERG_QA_MODEL` e a pasta de pesos com
 `SPILBERG_WHISPER_CACHE`. Não instala dependências nem baixa pesos durante o QA.
+Sem pasta explícita, preparação e QA resolvem os mesmos pesos em
+`$XDG_CACHE_HOME/whisper` ou `~/.cache/whisper`. O arquivo efetivamente carregado
+é o mesmo cujo hash integra a chave de cache.
 Sem o modelo, registra a indisponibilidade para revisão auditiva manual.
 
 O cache final usa hash do WAV extraído, hash dos pesos, versão do backend e
@@ -75,6 +81,9 @@ A aprovação do job fixa as dependências locais conhecidas antes do render.
 Assets Pexels obtidos pelo plano explícito são registrados pelo conteúdo efetivamente
 usado no render. O relatório fixa entradas e recibo; revisão, retomada e entrega
 revalidam os hashes. Nenhum cache antigo ou simples `qa_passed=true` autoriza entrega.
+Capa e imagens de inspeção também ficam vinculadas ao relatório; remover ou alterar
+esses artefatos bloqueia o aceite. Caminhos de saída no manifesto precisam coincidir
+com os artefatos efetivamente revisados, inclusive durante a promoção local.
 
 O manifesto de render passa a `schema_version: 2.0`, mantendo os campos existentes
 e acrescentando relatório/revisão por corte. Jobs antigos precisam gerar revisão

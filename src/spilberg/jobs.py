@@ -285,6 +285,8 @@ class JobStore:
             manifest = self._read_json(existing)
             if manifest.get("schema_version") == "2.0":
                 # Recovery must revalidate content, not trust a historical qa_passed flag.
+                if state["status"] == JobStatus.QA_FAILED.value:
+                    manifest = await self._recheck_quality(job_id, manifest)
                 return self._complete_quality(job_id, manifest)
         attempts = int(state.get("render_attempts", 0))
         if attempts >= 2:
@@ -335,6 +337,39 @@ class JobStore:
         self._write_json(job_dir / "render-manifest.json", manifest)
         return self._complete_quality(job_id, manifest)
 
+    async def _recheck_quality(self, job_id, manifest):
+        """Retry verification of unchanged renders; archive reports and invalidate review."""
+        from uuid import uuid4
+        from .editing import SpilbergOrchestrator
+        from .qa import run_qa
+        from .quality import review_output, verify_fingerprints
+        directory = self.job_dir(job_id)
+        approved = directory / "agent-plan.approved.json"
+        plan = AgentPlan.model_validate_json(approved.read_text(encoding="utf-8"))
+        candidates = {c.candidate_id: c for c in plan.candidates}
+        orchestrator = SpilbergOrchestrator(str(directory / "engine"))
+        for item in manifest["outputs"]:
+            # A corrupt/substituted artifact is not repaired by approving new hashes.
+            verify_fingerprints({item["output"]: item["output_sha256"]})
+            previous = self._read_json(Path(item["quality_report"]))
+            if Path(item["output"]).resolve() != Path(previous["video"]).resolve():
+                raise RuntimeError("MP4 não corresponde ao relatório anterior")
+            edit = EditPlan.model_validate(candidates[item["candidate_id"]].edit_plan)
+            run_dir = directory / "engine/qa" / item["candidate_id"] / f"recheck-{uuid4().hex[:12]}"
+            try:
+                qa = await run_qa(Path(item["output"]), run_dir, edit.target_platform.value, edit.selected_duration, orchestrator)
+            except Exception as error:
+                qa = {"passed": False, "error": str(error)}
+            report = await asyncio.to_thread(review_output, Path(item["output"]), item["candidate_id"], edit,
+                directory / "transcript.json", run_dir, qa, approved)
+            item.setdefault("quality_history", []).append({"path": item["quality_report"], "sha256": item["quality_report_sha256"],
+                                                           "editorial_review": item.pop("editorial_review", None)})
+            item.update(qa=qa, quality_report=str(report), quality_report_sha256=file_sha256(report),
+                        quality_status=self._read_json(report)["status"])
+        manifest["qa_passed"] = all(i["quality_status"] != "FAIL" for i in manifest["outputs"])
+        self._write_json(directory / "render-manifest.json", manifest)
+        return manifest
+
     def _quality_ready(self, job_id, manifest):
         try:
             return self._validate_quality(job_id, manifest)
@@ -358,6 +393,13 @@ class JobStore:
             report = self._read_json(path)
             if report["clip_id"] != item["candidate_id"] or report["video_sha256"] != item["output_sha256"]:
                 raise RuntimeError("Relatório associado ao corte errado")
+            for role in ("output", "cover", "render_receipt", "captions"):
+                expected = report.get("artifacts", {}).get(role)
+                if item.get(role):
+                    if not expected or Path(item[role]).resolve() != Path(expected["path"]).resolve():
+                        raise RuntimeError(f"Caminho de {role} não corresponde à revisão")
+                elif expected:
+                    raise RuntimeError(f"Artefato {role} ausente do manifesto")
             verify_fingerprints(report["inputs"])
             if report["status"] == "FAIL":
                 failed, ready = True, False
@@ -404,6 +446,7 @@ class JobStore:
         final_dir = self.root / "outputs" / job_id
         final_dir.mkdir(parents=True, exist_ok=True)
         for item in manifest["outputs"]:
+            report = self._read_json(Path(item["quality_report"]))
             for source_key, local_key, hash_key in [
                 ("output", "local_output", "output_sha256"),
                 ("cover", "local_cover", "cover_sha256"),
@@ -417,11 +460,16 @@ class JobStore:
                 if not original.is_file():
                     raise FileNotFoundError(f"Artefato de render ausente: {original}")
                 final = final_dir / original.name
-                digest = file_sha256(original)
+                digest = (item["quality_report_sha256"] if source_key == "quality_report" else
+                          report["artifacts"][source_key]["sha256"])
+                if file_sha256(original) != digest:
+                    raise RuntimeError("Artefato mudou durante a promoção")
                 if final.exists() and file_sha256(final) != digest:
                     raise RuntimeError("Artefato final mudou; preserve as duas versões antes de retomar")
                 if not final.exists():
                     shutil.copy2(original, final)
+                if file_sha256(final) != digest:
+                    raise RuntimeError("Cópia não corresponde ao artefato revisado")
                 item[local_key] = str(final)
                 item[hash_key] = digest
         self._write_json(self.job_dir(job_id) / "render-manifest.json", manifest)

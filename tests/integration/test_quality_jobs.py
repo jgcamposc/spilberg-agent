@@ -111,3 +111,64 @@ def test_approval_tracks_local_assets(tmp_path, master_factory):
     music.write_bytes(b"other music")
     with pytest.raises(RuntimeError):
         verify_fingerprints(recorded)
+
+
+def test_transient_qa_failure_can_be_rechecked_without_rerender(tmp_path, master_factory, monkeypatch):
+    from spilberg import visual_review
+    real = visual_review.scan_video
+    monkeypatch.setattr(visual_review, "scan_video", lambda *a, **kw: {
+        "name": "visual_events", "status": "FAIL", "blocking": True, "reason": "transient failure"})
+    store, job = approved_job(tmp_path, master_factory)
+    with pytest.raises(RuntimeError):
+        asyncio.run(store.finish(job))
+    manifest = store._read_json(store.job_dir(job) / "render-manifest.json")
+    original_report = Path(manifest["outputs"][0]["quality_report"])
+    old_contents = original_report.read_bytes()
+    monkeypatch.setattr(visual_review, "scan_video", real)
+    assert asyncio.run(store.finish(job))["status"] == "REVIEW_REQUIRED"
+    assert store.load_state(job)["render_attempts"] == 1
+    assert original_report.read_bytes() == old_contents
+    updated = store._read_json(store.job_dir(job) / "render-manifest.json")
+    assert updated["outputs"][0]["quality_report"] != str(original_report)
+    assert updated["outputs"][0]["qa"]["contact_sheet"] != manifest["outputs"][0]["qa"]["contact_sheet"]
+
+
+def test_review_binds_contact_sheet(tmp_path, master_factory, monkeypatch):
+    monkeypatch.setenv("SPILBERG_QA_MODEL", "unavailable-test-model")
+    store, job = approved_job(tmp_path, master_factory); asyncio.run(store.finish(job))
+    manifest = store._read_json(store.job_dir(job) / "render-manifest.json")
+    Path(manifest["outputs"][0]["qa"]["contact_sheet"]).unlink()
+    with pytest.raises(RuntimeError):
+        review(store, job)
+
+
+def test_review_binds_cover(tmp_path, master_factory, monkeypatch):
+    from spilberg.editing import SpilbergOrchestrator
+    from spilberg.quality import write_json
+    actual = SpilbergOrchestrator.execute_plan
+    async def with_cover(self, *a, **kw):
+        out = await actual(self, *a, **kw)
+        cover = out.with_suffix(".cover.jpg"); cover.write_bytes(b"synthetic cover")
+        receipt = store._read_json(out.with_suffix(".render.json"))
+        receipt.update(cover=str(cover), cover_sha256=file_sha256(cover))
+        write_json(out.with_suffix(".render.json"), receipt)
+        return out
+    monkeypatch.setattr(SpilbergOrchestrator, "execute_plan", with_cover)
+    store, job = approved_job(tmp_path, master_factory); asyncio.run(store.finish(job))
+    manifest = store._read_json(store.job_dir(job) / "render-manifest.json")
+    Path(manifest["outputs"][0]["cover"]).write_bytes(b"changed cover")
+    with pytest.raises(RuntimeError):
+        review(store, job)
+
+
+def test_promotion_cannot_substitute_manifest_output_path(tmp_path, master_factory, monkeypatch):
+    monkeypatch.setenv("SPILBERG_QA_MODEL", "unavailable-test-model")
+    store, job = approved_job(tmp_path, master_factory); asyncio.run(store.finish(job))
+    path = store.job_dir(job) / "render-manifest.json"
+    manifest = store._read_json(path)
+    replacement = tmp_path / "another.mp4"; replacement.write_bytes(b"unreviewed video")
+    manifest["outputs"][0]["output"] = str(replacement)
+    store._write_json(path, manifest)
+    with pytest.raises(RuntimeError):
+        review(store, job)
+    assert store.load_state(job)["status"] != "LOCAL_READY"

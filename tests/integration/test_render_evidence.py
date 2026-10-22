@@ -37,3 +37,20 @@ def test_direct_cibo_render_has_reproducible_receipt_without_assets(tmp_path, ma
     assert report["output_sha256"] == file_sha256(output)
     assert report["captions_sha256"] == file_sha256(output.with_suffix(".captions.json"))
     assert report["assets"] == {}
+
+
+def test_relative_broll_receipt_fingerprints_the_file_given_to_ffmpeg(tmp_path, master_factory, monkeypatch):
+    source = master_factory(duration=2)
+    broll = master_factory(name="broll", duration=2)
+    elsewhere = tmp_path / "elsewhere"; elsewhere.mkdir()
+    (elsewhere / broll.name).write_bytes(b"a different homonymous file")
+    monkeypatch.chdir(elsewhere)
+    plan = EditPlan(video_source=str(source), target_duration=1.5, status=PlanStatus.APPROVED,
+        platform=Platform.YOUTUBE, segments=[CutSegment(start_time=0, end_time=1.5, reason="fixture")],
+        effects=[VisualEffect(effect_type=EffectType.B_ROLL, start_time=0, end_time=1.5,
+                              parameters={"source": "local", "media_path": broll.name})])
+    file = tmp_path / "clip-01.json"; plan.export_json(str(file))
+    engine = SpilbergOrchestrator(str(tmp_path / "engine")); engine.project_root = tmp_path
+    output = asyncio.run(engine.execute_plan(str(file)))
+    receipt = json.loads(output.with_suffix(".render.json").read_text())
+    assert receipt["assets"] == {str(broll.resolve()): file_sha256(broll)}

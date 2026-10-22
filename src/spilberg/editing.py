@@ -632,7 +632,7 @@ class SpilbergOrchestrator:
         }
         from .quality import fingerprints, write_captions, write_json
         captions_path = write_captions(final_output, plan_file.stem, caption_segments)
-        assets = [Path(b.parameters["media_path"]) for b in brolls]
+        assets = [(self.project_root / Path(b.parameters["media_path"])).resolve() for b in brolls]
         assets += [self.project_root / Path(s.parameters["media_path"]) for s in split_screens]
         if ducking_effect:
             assets.append(music_full_path)

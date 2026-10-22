@@ -61,10 +61,18 @@ def load_transcript(path: Path) -> list[TranscriptSegment]:
     return normalize_transcript(json.loads(path.read_text(encoding="utf-8")))
 
 
+def local_model_path(model_name: str) -> Path:
+    """One checkpoint resolver for the cache and both inference consumers."""
+    candidate = Path(model_name)
+    if candidate.is_file():
+        return candidate.resolve()
+    default = Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "whisper"
+    return (Path(os.getenv("SPILBERG_WHISPER_CACHE", default)) / f"{model_name}.pt").expanduser().resolve()
+
+
 def source_cache_path(cache_dir: Path, model_name: str) -> Path:
     """The source hash is the cache directory; model and inference settings finish the key."""
-    candidate = Path(model_name)
-    model = candidate if candidate.is_file() else Path(os.getenv("SPILBERG_WHISPER_CACHE", Path.home() / ".cache/whisper")) / f"{model_name}.pt"
+    model = local_model_path(model_name)
     try:
         version = importlib.metadata.version("openai-whisper")
     except importlib.metadata.PackageNotFoundError:
@@ -81,7 +89,9 @@ def transcribe_local(video: Path, model_name: str, destination: Path) -> list[Tr
         import whisper
     except ImportError as error:
         raise RuntimeError("Whisper local indisponivel. Rode o instalador do Spilberg.") from error
-    model = whisper.load_model(model_name)
+    weights = local_model_path(model_name)
+    model = (whisper.load_model(str(weights)) if weights.is_file() else
+             whisper.load_model(model_name, download_root=str(weights.parent)))
     result = model.transcribe(str(video), word_timestamps=True, verbose=False)
     destination.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return normalize_transcript(result)

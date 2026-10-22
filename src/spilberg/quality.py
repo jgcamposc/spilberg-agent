@@ -15,9 +15,10 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import uuid
 from typing import Any
 
-from .local_analysis import file_sha256
+from .local_analysis import file_sha256, local_model_path
 from .media_clock import tool
 
 
@@ -127,7 +128,7 @@ def asr_cache_key(audio: Path, model: Path, parameters: dict) -> str:
 def transcribe_final(video: Path, cache: Path, model_name: str | None = None) -> dict:
     """Only load explicitly cached local Whisper weights. Never download a model."""
     name = model_name or os.getenv("SPILBERG_QA_MODEL", "large-v3")
-    model = Path(os.getenv("SPILBERG_WHISPER_CACHE", Path.home() / ".cache/whisper")) / f"{name}.pt"
+    model = local_model_path(name)
     if not re.fullmatch(r"[\w.-]+", name) or not model.is_file():
         return {"available": False, "reason": f"Modelo local {name} indisponível; conferir áudio manualmente"}
     try:
@@ -230,6 +231,7 @@ def review_output(video: Path, clip_id: str, plan: Any, transcript: Path,
     qa_dir.mkdir(parents=True, exist_ok=True)
     checks = [check("technical", "PASS" if technical.get("passed") else "FAIL", blocking=True, result=technical)]
     paths = [video, transcript, approved_path]
+    artifacts = {"output": {"path": str(video.resolve()), "sha256": file_sha256(video)}}
     receipt_path, captions_path = video.with_suffix(".render.json"), video.with_suffix(".captions.json")
     segments = [s for s in plan.segments if s.keep]
     try:
@@ -249,11 +251,19 @@ def review_output(video: Path, clip_id: str, plan: Any, transcript: Path,
             raise RuntimeError("Recibo não corresponde à fonte/MP4")
         verify_fingerprints(receipt.get("assets", {}))
         paths += [receipt_path] + [Path(p) for p in receipt.get("assets", {})]
+        artifacts["render_receipt"] = {"path": str(receipt_path.resolve()), "sha256": file_sha256(receipt_path)}
+        if receipt.get("cover"):
+            cover = Path(receipt["cover"])
+            if receipt.get("cover_sha256") != file_sha256(cover):
+                raise RuntimeError("Capa não corresponde ao recibo")
+            paths.append(cover)
+            artifacts["cover"] = {"path": str(cover.resolve()), "sha256": file_sha256(cover)}
         needs_captions = any(e.effect_type.value == "subtitle_style" for e in plan.effects)
         if captions_path.is_file():
             if receipt.get("captions_sha256") != file_sha256(captions_path):
                 raise RuntimeError("Legenda usada no render mudou")
             paths.append(captions_path)
+            artifacts["captions"] = {"path": str(captions_path.resolve()), "sha256": file_sha256(captions_path)}
         if needs_captions:
             checks.append(check_captions(captions_path, video, clip_id, final["duration"]))
         data = json.loads(transcript.read_text(encoding="utf-8"))
@@ -264,14 +274,21 @@ def review_output(video: Path, clip_id: str, plan: Any, transcript: Path,
         speech = compare_speech(reference, asr["segments"]) if asr.get("available") else check("final_speech", "REVIEW_REQUIRED", reason=asr["reason"])
         speech["asr"] = {k: v for k, v in asr.items() if k != "segments"}
         checks.append(speech)
-        checks.append(scan_video(video, qa_dir))
+        visual = scan_video(video, qa_dir)
+        checks.append(visual)
+        images = list(visual.get("contact_sheets", []))
+        images += [r["contact_sheet"] for r in (technical, visual) if r.get("contact_sheet")]
+        for image in set(images):
+            if not Path(image).is_file():
+                raise RuntimeError("Imagem de evidência inacessível")
+            paths.append(Path(image))
     except Exception as error:
         checks.append(check("quality_execution", "FAIL", blocking=True, reason=str(error)))
     report = {"schema_version": "1.0", "clip_id": clip_id, "video": str(video),
-              "video_sha256": file_sha256(video), "inputs": fingerprints(paths),
+              "video_sha256": file_sha256(video), "inputs": fingerprints(paths), "artifacts": artifacts,
               "status": report_status(checks), "technical_status": "FAIL" if report_status(checks) == "FAIL" else "PASS",
               "editorial_status": "REVIEW_REQUIRED", "checks": checks,
-              "review_instructions": "Assista/escute o MP4 completo, confira legendas, nomes/números, limites de fala e todos os alertas. Registre a decisão para este hash de relatório."}
-    path = qa_dir / f"{clip_id}-quality.json"
+              "review_instructions": "Assista/escute o MP4 completo, confira capa, legendas, nomes/números, limites de fala e todos os alertas. Registre a decisão para este hash de relatório."}
+    path = qa_dir / f"{clip_id}-quality-{uuid.uuid4().hex[:12]}.json"
     write_json(path, report)
     return path

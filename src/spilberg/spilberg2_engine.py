@@ -466,6 +466,7 @@ def render_spilberg2_cut(master_path, t_start, t_end, headline, caps_data,
     report.write_text(json.dumps({"engine":"spilberg2", "source":str(master), "start":t_start,"end":t_end,"source_frame_rate":info["rate"],"output_frame_rate":result["rate"],"expected_duration":expected,"output_duration":result["duration"],"av_duration_delta":delta,"full_decode":True,"speed":1,"headline_in_video":embed_cover,"cover":str(cover) if headline else None,"encoder":encoder,"work_dir":str(work),
         "source_sha256":file_sha256(master),"output_sha256":file_sha256(output),
         "captions":str(captions_path),"captions_sha256":file_sha256(captions_path),
+        "cover_sha256":file_sha256(cover) if headline else None,
         "assets":fingerprints([Path(p) for p in required])},indent=2)+"\n")
     return str(output)
 
