@@ -19,7 +19,7 @@ dependencies = [
   "opencv-python==4.14.0.94",
   "numpy==2.2.6",
   "Pillow==12.3.0",
-  "certifi==2026.7.22",
+  "certifi==2026.10.19",
   "imageio-ffmpeg==0.6.0",
 ]
 
